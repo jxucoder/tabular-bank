@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.base import is_classifier, is_regressor
 from sklearn.metrics import (
     accuracy_score,
     log_loss,
@@ -157,6 +158,12 @@ def run_benchmark(
 ) -> BenchmarkResult:
     """Run a full benchmark with multiple models across all tasks.
 
+    Models are routed to compatible tasks by problem type. A model is
+    considered a classifier if it has a ``_estimator_type`` attribute set
+    to ``"classifier"`` (the scikit-learn convention), and a regressor if
+    it is set to ``"regressor"``.  Models without that attribute are
+    evaluated on every task.
+
     Args:
         models: Dict of model_name -> sklearn-compatible model instance.
         round_id: Benchmark round identifier.
@@ -177,8 +184,14 @@ def run_benchmark(
     benchmark = BenchmarkResult()
 
     for task in ctx.get_tasks():
-        logger.info("Running task: %s", task.name)
+        logger.info("Running task: %s (type=%s)", task.name, task.problem_type)
         for model_name, model in models.items():
+            if not _is_compatible(model, task.problem_type):
+                logger.info(
+                    "  Skipping %s — incompatible with %s task",
+                    model_name, task.problem_type,
+                )
+                continue
             logger.info("  Model: %s", model_name)
             task_results = evaluate_model(
                 model=model,
@@ -190,6 +203,26 @@ def run_benchmark(
             benchmark.results.extend(task_results)
 
     return benchmark
+
+
+# Task types that are classification problems
+_CLASSIFICATION_TYPES = {"binary", "multiclass"}
+# Task types that are regression problems
+_REGRESSION_TYPES = {"regression"}
+
+
+def _is_compatible(model: object, problem_type: str) -> bool:
+    """Check whether a model is compatible with a task's problem type."""
+    try:
+        if is_classifier(model):
+            return problem_type in _CLASSIFICATION_TYPES
+        if is_regressor(model):
+            return problem_type in _REGRESSION_TYPES
+    except (AttributeError, TypeError):
+        pass
+    # Not a recognized sklearn estimator — assume the caller knows what
+    # they're doing and allow it through.
+    return True
 
 
 def run_benchmark_tabarena(
