@@ -2,8 +2,10 @@
 
 These templates contain ZERO dataset-specific information. They only define
 high-level constraints: problem type, approximate feature count, difficulty,
-and a domain hint for vocabulary selection. All actual features, DAG structures,
-distributions, and data are procedurally generated from the seed.
+and categorical ratio. The 'domain' field is purely metadata for human reference
+and does NOT affect generation. All features, DAG structures, distributions,
+and data — including feature names — are procedurally generated from the seed
+using opaque phonetic identifiers.
 """
 
 from __future__ import annotations

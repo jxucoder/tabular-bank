@@ -1,205 +1,47 @@
 """Procedural feature generation from seed.
 
 Generates feature names, types, distributions, and parameters entirely from
-the seed. The domain vocabulary pools are intentionally large and generic —
-they provide plausible-sounding names but the specific combination selected
-is unpredictable without the seed.
+the seed. Feature names are constructed from phonetic building blocks — NOT
+drawn from fixed word banks — making the space of possible names effectively
+infinite and unpredictable without the seed.
 """
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 
-# Domain-specific vocabulary pools for feature name generation.
-# These are large enough that the specific combination is unpredictable.
-DOMAIN_VOCABULARIES: dict[str, dict] = {
-    "commercial": {
-        "prefixes": [
-            "monthly", "annual", "total", "avg", "max", "min", "net", "gross",
-            "daily", "weekly", "cumulative", "recent", "lifetime", "current",
-            "previous", "projected", "actual", "adjusted", "weighted", "rolling",
-        ],
-        "roots": [
-            "spend", "revenue", "transaction", "purchase", "order", "visit",
-            "session", "click", "conversion", "engagement", "retention",
-            "acquisition", "churn", "renewal", "subscription", "usage",
-            "activity", "interaction", "feedback", "complaint", "inquiry",
-            "referral", "discount", "promotion", "campaign", "channel",
-            "segment", "tier", "loyalty", "satisfaction", "rating",
-        ],
-        "suffixes": [
-            "count", "amount", "rate", "ratio", "score", "index",
-            "duration", "frequency", "value", "pct", "rank", "level",
-            "flag", "category", "type", "class", "group", "band",
-        ],
-        "target_names": [
-            "outcome", "result", "status", "response", "label",
-            "target", "indicator", "signal", "event", "flag",
-        ],
-        "category_pools": [
-            ["low", "medium", "high"],
-            ["basic", "standard", "premium"],
-            ["active", "inactive"],
-            ["yes", "no"],
-            ["type_a", "type_b", "type_c"],
-            ["small", "medium", "large", "enterprise"],
-            ["new", "returning", "loyal"],
-            ["online", "offline", "hybrid"],
-            ["direct", "indirect", "partner"],
-            ["tier_1", "tier_2", "tier_3", "tier_4"],
-        ],
-    },
-    "healthcare": {
-        "prefixes": [
-            "baseline", "peak", "avg", "total", "fasting", "resting",
-            "systolic", "diastolic", "pre", "post", "initial", "follow_up",
-            "normalized", "adjusted", "measured", "reported", "estimated",
-            "clinical", "lab", "vital",
-        ],
-        "roots": [
-            "pressure", "glucose", "cholesterol", "hemoglobin", "platelet",
-            "bmi", "heart_rate", "temperature", "oxygen", "creatinine",
-            "albumin", "bilirubin", "sodium", "potassium", "calcium",
-            "white_cell", "red_cell", "enzyme", "hormone", "protein",
-            "antibody", "marker", "dose", "treatment", "therapy",
-            "symptom", "diagnosis", "procedure", "visit", "episode",
-        ],
-        "suffixes": [
-            "level", "count", "ratio", "score", "index", "value",
-            "measurement", "reading", "result", "grade", "stage",
-            "rate", "frequency", "duration", "concentration", "volume",
-        ],
-        "target_names": [
-            "condition", "diagnosis", "outcome", "prognosis", "risk_level",
-            "severity", "classification", "category", "status", "assessment",
-        ],
-        "category_pools": [
-            ["normal", "elevated", "high", "critical"],
-            ["negative", "positive"],
-            ["stage_1", "stage_2", "stage_3", "stage_4"],
-            ["mild", "moderate", "severe"],
-            ["type_i", "type_ii", "type_iii"],
-            ["low_risk", "medium_risk", "high_risk"],
-            ["remission", "stable", "progressing"],
-            ["acute", "chronic"],
-            ["inpatient", "outpatient"],
-            ["male", "female", "other"],
-        ],
-    },
-    "real_estate": {
-        "prefixes": [
-            "total", "avg", "median", "estimated", "assessed", "listed",
-            "actual", "adjusted", "gross", "net", "annual", "monthly",
-            "nearby", "local", "regional", "current", "historical",
-            "projected", "comparative", "weighted",
-        ],
-        "roots": [
-            "area", "room", "floor", "bathroom", "bedroom", "garage",
-            "lot", "frontage", "depth", "elevation", "distance",
-            "price", "tax", "assessment", "valuation", "rent",
-            "income", "expense", "maintenance", "renovation", "age",
-            "quality", "condition", "amenity", "view", "noise",
-            "school", "transit", "crime", "population", "density",
-        ],
-        "suffixes": [
-            "sqft", "count", "score", "index", "rating", "value",
-            "amount", "ratio", "pct", "rank", "grade", "level",
-            "distance", "years", "months", "class", "type", "zone",
-        ],
-        "target_names": [
-            "price", "valuation", "assessment", "estimate", "appraisal",
-            "value", "amount", "cost", "worth", "figure",
-        ],
-        "category_pools": [
-            ["residential", "commercial", "mixed"],
-            ["excellent", "good", "fair", "poor"],
-            ["urban", "suburban", "rural"],
-            ["zone_a", "zone_b", "zone_c", "zone_d"],
-            ["detached", "semi", "townhouse", "condo"],
-            ["new", "renovated", "original"],
-            ["north", "south", "east", "west"],
-            ["low", "medium", "high"],
-            ["yes", "no"],
-            ["brick", "wood", "concrete", "steel"],
-        ],
-    },
-    "financial": {
-        "prefixes": [
-            "current", "previous", "avg", "total", "outstanding",
-            "available", "minimum", "maximum", "monthly", "annual",
-            "cumulative", "rolling", "weighted", "adjusted", "gross",
-            "net", "recent", "historical", "projected", "reported",
-        ],
-        "roots": [
-            "balance", "payment", "credit", "debit", "interest",
-            "principal", "installment", "fee", "penalty", "income",
-            "expense", "savings", "investment", "liability", "asset",
-            "equity", "debt", "limit", "utilization", "score",
-            "history", "inquiry", "account", "transaction", "transfer",
-            "deposit", "withdrawal", "return", "volatility", "exposure",
-        ],
-        "suffixes": [
-            "amount", "count", "ratio", "rate", "score", "pct",
-            "value", "duration", "frequency", "index", "rank",
-            "level", "grade", "band", "class", "category", "type",
-        ],
-        "target_names": [
-            "default", "risk", "outcome", "status", "decision",
-            "result", "classification", "indicator", "event", "flag",
-        ],
-        "category_pools": [
-            ["approved", "denied"],
-            ["low", "medium", "high"],
-            ["current", "delinquent", "default"],
-            ["fixed", "variable"],
-            ["secured", "unsecured"],
-            ["short_term", "medium_term", "long_term"],
-            ["grade_a", "grade_b", "grade_c", "grade_d"],
-            ["individual", "joint"],
-            ["primary", "secondary"],
-            ["employed", "self_employed", "unemployed", "retired"],
-        ],
-    },
-    "hr": {
-        "prefixes": [
-            "current", "previous", "avg", "total", "annual", "monthly",
-            "cumulative", "recent", "initial", "adjusted", "normalized",
-            "reported", "measured", "estimated", "weighted", "rolling",
-            "baseline", "peak", "minimum", "maximum",
-        ],
-        "roots": [
-            "salary", "bonus", "compensation", "tenure", "experience",
-            "performance", "satisfaction", "engagement", "absence",
-            "overtime", "training", "certification", "promotion",
-            "review", "feedback", "complaint", "project", "team",
-            "workload", "commute", "travel", "relocation", "benefit",
-            "stock", "option", "leave", "sick_day", "vacation",
-            "mentoring", "collaboration",
-        ],
-        "suffixes": [
-            "score", "count", "hours", "days", "months", "years",
-            "amount", "ratio", "rate", "pct", "index", "rank",
-            "level", "grade", "band", "category", "type", "class",
-        ],
-        "target_names": [
-            "attrition", "departure", "turnover", "retention", "outcome",
-            "status", "decision", "result", "event", "indicator",
-        ],
-        "category_pools": [
-            ["junior", "mid", "senior", "lead"],
-            ["full_time", "part_time", "contract"],
-            ["on_site", "remote", "hybrid"],
-            ["engineering", "sales", "marketing", "operations", "hr"],
-            ["high", "medium", "low"],
-            ["exceeds", "meets", "below"],
-            ["yes", "no"],
-            ["male", "female", "non_binary"],
-            ["single", "married", "divorced"],
-            ["bachelors", "masters", "phd", "other"],
-        ],
-    },
-}
+# Phonetic building blocks for name generation.
+# These are sub-word fragments, not meaningful words. They combine into
+# pronounceable but opaque identifiers like "vel_kortan" or "drimex_ploth".
+# With ~40 syllables and names of 2-4 syllables, the space is 40^4 = 2.5M+
+# possible roots alone, before considering the full combinatorial explosion.
+_ONSET = [
+    "b", "br", "cr", "d", "dr", "f", "fl", "fr", "g", "gl", "gr",
+    "h", "j", "k", "kl", "kr", "l", "m", "n", "p", "pl", "pr",
+    "qu", "r", "s", "sc", "sh", "sk", "sl", "sm", "sn", "sp", "st",
+    "str", "sw", "t", "tr", "v", "w", "z",
+]
+_NUCLEUS = ["a", "e", "i", "o", "u", "ai", "au", "ei", "ou", "ea", "oa", "io"]
+_CODA = ["", "b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t", "x", "z", "nd", "nt", "lk", "rm", "rn", "st", "th"]
+
+# Structural patterns for how feature names are formatted
+_NAME_PATTERNS = [
+    "{root}",                  # "velkor"
+    "{root}_{suffix}",        # "velkor_3"  (suffix is a short token)
+    "{prefix}_{root}",        # "x_velkor"
+    "{prefix}_{root}_{suffix}",  # "x_velkor_3"
+]
+
+# Short prefix/suffix tokens (single chars or tiny abbreviations, not meaningful)
+_PREFIX_TOKENS = list("abcdefghijklmnopqrstuvwxyz") + [
+    "a0", "b1", "c2", "d3", "q1", "q2", "v0", "v1", "x0", "x1", "z0",
+]
+_SUFFIX_TOKENS = [str(i) for i in range(100)] + [
+    "a", "b", "c", "d", "e", "x", "y", "z", "n", "m",
+]
 
 # Distribution families for continuous features
 CONTINUOUS_DISTRIBUTIONS = ["normal", "lognormal", "uniform", "exponential", "beta"]
@@ -211,35 +53,28 @@ def generate_features(
 ) -> tuple[list[dict], dict]:
     """Procedurally generate feature specifications from seed + template.
 
+    Feature names are constructed from phonetic syllable blocks, producing
+    opaque identifiers like "brondek_z0" or "q2_floimark". The space of
+    possible names is effectively infinite.
+
     Returns:
         features: List of feature spec dicts (name, type, distribution info)
         target: Target feature spec dict
     """
-    domain = template["domain"]
-    vocab = DOMAIN_VOCABULARIES[domain]
-
-    n_features = rng.integers(
+    n_features = int(rng.integers(
         template["n_features_range"][0],
         template["n_features_range"][1] + 1,
-    )
+    ))
     n_categorical = max(1, int(n_features * template["categorical_ratio"]))
     n_continuous = n_features - n_categorical
-
-    # Shuffle vocabularies
-    prefixes = list(vocab["prefixes"])
-    roots = list(vocab["roots"])
-    suffixes = list(vocab["suffixes"])
-    rng.shuffle(prefixes)
-    rng.shuffle(roots)
-    rng.shuffle(suffixes)
 
     features = []
     used_names: set[str] = set()
 
     # Generate continuous features
-    for i in range(n_continuous):
-        name = _generate_unique_name(rng, prefixes, roots, suffixes, used_names)
-        dist = rng.choice(CONTINUOUS_DISTRIBUTIONS)
+    for _ in range(n_continuous):
+        name = _generate_unique_name(rng, used_names)
+        dist = str(rng.choice(CONTINUOUS_DISTRIBUTIONS))
         params = _sample_distribution_params(rng, dist)
         features.append({
             "name": name,
@@ -249,17 +84,11 @@ def generate_features(
         })
 
     # Generate categorical features
-    category_pools = list(vocab["category_pools"])
-    rng.shuffle(category_pools)
-    for i in range(n_categorical):
-        name = _generate_unique_name(rng, prefixes, roots, suffixes, used_names)
-        pool = category_pools[i % len(category_pools)]
-        # Randomly select a subset or all categories
-        n_cats = rng.integers(2, min(len(pool) + 1, 7))
-        pool_indices = rng.choice(len(pool), size=min(n_cats, len(pool)), replace=False)
-        categories = [pool[j] for j in sorted(pool_indices)]
-        # Generate random probabilities
-        raw_probs = rng.dirichlet(np.ones(len(categories)))
+    for _ in range(n_categorical):
+        name = _generate_unique_name(rng, used_names)
+        n_cats = int(rng.integers(2, 7))
+        categories = [_generate_category_label(rng, j) for j in range(n_cats)]
+        raw_probs = rng.dirichlet(np.ones(n_cats))
         features.append({
             "name": name,
             "type": "categorical",
@@ -271,10 +100,8 @@ def generate_features(
     perm = rng.permutation(len(features))
     features = [features[i] for i in perm]
 
-    # Generate target
-    target_names = list(vocab["target_names"])
-    rng.shuffle(target_names)
-    target_name = target_names[0]
+    # Generate target name
+    target_name = _generate_unique_name(rng, used_names)
 
     if template["problem_type"] == "regression":
         target = {
@@ -300,35 +127,61 @@ def generate_features(
     return features, target
 
 
+def _generate_syllable(rng: np.random.Generator) -> str:
+    """Generate a single pronounceable syllable."""
+    onset = _ONSET[int(rng.integers(0, len(_ONSET)))]
+    nucleus = _NUCLEUS[int(rng.integers(0, len(_NUCLEUS)))]
+    coda = _CODA[int(rng.integers(0, len(_CODA)))]
+    return onset + nucleus + coda
+
+
+def _generate_root(rng: np.random.Generator) -> str:
+    """Generate a pronounceable root word from 2-3 syllables."""
+    n_syllables = int(rng.integers(2, 4))  # 2 or 3 syllables
+    return "".join(_generate_syllable(rng) for _ in range(n_syllables))
+
+
 def _generate_unique_name(
     rng: np.random.Generator,
-    prefixes: list[str],
-    roots: list[str],
-    suffixes: list[str],
     used_names: set[str],
 ) -> str:
-    """Generate a unique feature name by combining vocabulary parts."""
-    for _ in range(100):  # Avoid infinite loop
-        parts = []
-        # Sometimes skip prefix (40% chance)
-        if rng.random() > 0.4:
-            parts.append(prefixes[rng.integers(0, len(prefixes))])
-        parts.append(roots[rng.integers(0, len(roots))])
-        # Sometimes add suffix (60% chance)
-        if rng.random() > 0.4:
-            parts.append(suffixes[rng.integers(0, len(suffixes))])
-        name = "_".join(parts)
+    """Generate a unique, opaque feature name."""
+    for _ in range(200):
+        pattern = _NAME_PATTERNS[int(rng.integers(0, len(_NAME_PATTERNS)))]
+        root = _generate_root(rng)
+
+        if "{prefix}" in pattern:
+            prefix = _PREFIX_TOKENS[int(rng.integers(0, len(_PREFIX_TOKENS)))]
+        else:
+            prefix = ""
+
+        if "{suffix}" in pattern:
+            suffix = _SUFFIX_TOKENS[int(rng.integers(0, len(_SUFFIX_TOKENS)))]
+        else:
+            suffix = ""
+
+        name = pattern.format(root=root, prefix=prefix, suffix=suffix)
+
         if name not in used_names:
             used_names.add(name)
             return name
-    # Fallback: append a number
-    base = roots[rng.integers(0, len(roots))]
+
+    # Extremely unlikely fallback
     i = 0
-    while f"{base}_{i}" in used_names:
+    while f"feat_{i}" in used_names:
         i += 1
-    name = f"{base}_{i}"
+    name = f"feat_{i}"
     used_names.add(name)
     return name
+
+
+def _generate_category_label(rng: np.random.Generator, index: int) -> str:
+    """Generate an opaque category label.
+
+    Uses a short syllable + index to create labels like "brel_0", "skoa_1".
+    """
+    syllable = _generate_syllable(rng)
+    return f"{syllable}_{index}"
 
 
 def _sample_distribution_params(rng: np.random.Generator, dist: str) -> dict:
