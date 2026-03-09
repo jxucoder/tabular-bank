@@ -7,6 +7,7 @@ accessing tasks, metadata, and running evaluations.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -54,11 +55,25 @@ class SyntheticTabContext:
             )
 
     def _is_round_complete(self) -> bool:
-        """Check if all datasets for this round are generated."""
-        if not self.round_dir.exists():
-            return False
+        """Check if all datasets for this round are generated.
+
+        Verifies that every scenario listed in round_metadata.json has a
+        directory with a .complete marker, so partially written or
+        corrupted caches trigger regeneration.
+        """
         meta_file = self.round_dir / "round_metadata.json"
-        return meta_file.exists()
+        if not meta_file.exists():
+            return False
+        try:
+            with open(meta_file) as f:
+                meta = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return False
+        for scenario_id in meta.get("scenarios", []):
+            ds_dir = self.round_dir / scenario_id
+            if not (ds_dir / ".complete").exists():
+                return False
+        return True
 
     def get_tasks(self) -> list[SyntheticTask]:
         """Return list of tasks for benchmarking."""

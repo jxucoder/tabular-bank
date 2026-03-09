@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from sklearn.dummy import DummyClassifier, DummyRegressor
 
-from synthetic_tab.runner import _is_compatible, run_benchmark
+from synthetic_tab.runner import _evaluate_metric, _is_compatible, run_benchmark
 
 
 def test_classifier_compatible_with_binary():
@@ -54,3 +54,31 @@ def test_run_benchmark_skips_incompatible_tasks():
         )
     # Should have at least some results (there are classification scenarios)
     assert len(result.results) > 0
+
+
+def test_log_loss_fallback_without_predict_proba():
+    """Models without predict_proba should not crash on log_loss tasks."""
+    import pandas as pd
+    from sklearn.tree import DecisionTreeClassifier
+
+    # Build a tiny multiclass dataset
+    X_train = pd.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [6, 5, 4, 3, 2, 1]})
+    y_train = pd.Series([0, 1, 2, 3, 0, 1])
+    X_test = pd.DataFrame({"a": [2, 4], "b": [5, 3]})
+    y_test = pd.Series([1, 3])
+
+    # Wrap a fitted model that only exposes predict (no predict_proba)
+    class PredictOnlyModel:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def predict(self, X):
+            return self._inner.predict(X)
+
+    inner = DecisionTreeClassifier().fit(X_train, y_train)
+    model = PredictOnlyModel(inner)
+
+    # This should not raise; it should fall back to accuracy
+    score = _evaluate_metric(model, X_test, y_test, "multiclass", "log_loss")
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0  # accuracy is in [0, 1]

@@ -288,8 +288,10 @@ def _evaluate_metric(
             y_proba = model.predict_proba(X_test)
             return float(-log_loss(y_test, y_proba))  # Negate so higher is better
         else:
+            # log_loss requires probabilities; hard labels from predict()
+            # will crash for multiclass targets.  Fall back to accuracy.
             y_pred = model.predict(X_test)
-            return float(-log_loss(y_test, y_pred))
+            return float(accuracy_score(y_test, y_pred))
     elif metric_name == "rmse":
         y_pred = model.predict(X_test)
         return float(-np.sqrt(mean_squared_error(y_test, y_pred)))  # Negate so higher is better
