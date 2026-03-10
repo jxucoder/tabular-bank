@@ -1,11 +1,12 @@
 """Example: Run a model on a single dataset with detailed output.
 
 Run:
-    python examples/run_single_dataset.py
+    python examples/scripts/run_single_dataset.py
 """
 
 from sklearn.ensemble import GradientBoostingClassifier
 
+import _bootstrap  # noqa: F401
 from tabular_bank.context import TabularBankContext
 from tabular_bank.runner import evaluate_model
 

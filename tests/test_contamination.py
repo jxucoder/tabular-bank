@@ -16,32 +16,28 @@ def _tmpl(seed=42, scenario_id="test"):
 
 
 def test_different_secrets_different_data():
-    """Different secrets should also change informative feature identities."""
+    """Different secrets should change the generated data even if names repeat."""
     tmpl = _tmpl()
     ds1 = generate_single_dataset("secret-alpha", "round-001", 0, template_override=tmpl)
     ds2 = generate_single_dataset("secret-beta", "round-001", 0, template_override=tmpl)
 
-    informative_1 = set(ds1.feature_names[:ds1.metadata["n_informative_features"]])
-    informative_2 = set(ds2.feature_names[:ds2.metadata["n_informative_features"]])
-    feature_overlap = informative_1 & informative_2
-
-    assert len(feature_overlap) < max(1, min(len(informative_1), len(informative_2)) // 2), (
-        f"Too much informative feature overlap between secrets: {feature_overlap}"
+    assert all(name.startswith("f_") for name in ds1.feature_names)
+    assert all(name.startswith("f_") for name in ds2.feature_names)
+    assert ds1.n_samples != ds2.n_samples or not ds1.data.equals(ds2.data), (
+        "Datasets from different secrets should not be identical, even when feature names match"
     )
 
 
 def test_different_rounds_different_data():
-    """Different rounds should also change informative feature identities."""
+    """Different rounds should change the generated data even if names repeat."""
     tmpl = _tmpl()
     ds1 = generate_single_dataset("same-secret", "round-001", 0, template_override=tmpl)
     ds2 = generate_single_dataset("same-secret", "round-002", 0, template_override=tmpl)
 
-    informative_1 = set(ds1.feature_names[:ds1.metadata["n_informative_features"]])
-    informative_2 = set(ds2.feature_names[:ds2.metadata["n_informative_features"]])
-    feature_overlap = informative_1 & informative_2
-
-    assert len(feature_overlap) < max(1, min(len(informative_1), len(informative_2)) // 2), (
-        f"Too much informative feature overlap between rounds: {feature_overlap}"
+    assert all(name.startswith("f_") for name in ds1.feature_names)
+    assert all(name.startswith("f_") for name in ds2.feature_names)
+    assert ds1.n_samples != ds2.n_samples or not ds1.data.equals(ds2.data), (
+        "Datasets from different rounds should not be identical, even when feature names match"
     )
 
 
@@ -94,9 +90,8 @@ def test_all_scenarios_differ():
         for i in range(5)
     ]
 
-    col_sets = [frozenset(ds.data.columns) for ds in datasets]
-    for i in range(len(col_sets)):
-        for j in range(i + 1, len(col_sets)):
-            assert col_sets[i] != col_sets[j], (
-                f"Scenarios {i} and {j} have identical columns"
+    for i in range(len(datasets)):
+        for j in range(i + 1, len(datasets)):
+            assert not datasets[i].data.equals(datasets[j].data), (
+                f"Scenarios {i} and {j} produced identical datasets"
             )

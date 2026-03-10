@@ -1,0 +1,23 @@
+{
+  "title": "Store Demand Forecast",
+  "slug": "store-demand-forecast",
+  "round_id": "examples-kaggle-v1",
+  "dataset_id": "examples-kaggle-v1_store_demand_forecast",
+  "scenario_id": "store_demand_forecast",
+  "problem_type": "regression",
+  "target_name": "future_demand",
+  "metric": "rmse",
+  "metric_display": "RMSE",
+  "n_train_rows": 320,
+  "n_test_rows": 160,
+  "missing_rate": 0.05,
+  "missing_mechanism": "MCAR",
+  "n_samples": 480,
+  "n_features": 19,
+  "n_informative_features": 16,
+  "n_noise_features": 3,
+  "n_continuous": 15,
+  "n_categorical": 4,
+  "domain": "retail",
+  "difficulty": "medium"
+}

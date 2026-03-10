@@ -1,45 +1,14 @@
 """Procedural feature generation from seed.
 
 Generates feature names, types, distributions, and parameters entirely from
-the seed. Feature names are constructed from phonetic building blocks — NOT
-drawn from fixed word banks — making the space of possible names effectively
-infinite and unpredictable without the seed.
+the seed. Feature names use a simple positional ``f_<index>`` scheme to keep
+generated datasets easy to read.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-
-# Phonetic building blocks for name generation.
-# These are sub-word fragments, not meaningful words. They combine into
-# pronounceable but opaque identifiers like "vel_kortan" or "drimex_ploth".
-# With ~40 syllables and names of 2-4 syllables, the space is 40^4 = 2.5M+
-# possible roots alone, before considering the full combinatorial explosion.
-_ONSET = [
-    "b", "br", "cr", "d", "dr", "f", "fl", "fr", "g", "gl", "gr",
-    "h", "j", "k", "kl", "kr", "l", "m", "n", "p", "pl", "pr",
-    "qu", "r", "s", "sc", "sh", "sk", "sl", "sm", "sn", "sp", "st",
-    "str", "sw", "t", "tr", "v", "w", "z",
-]
-_NUCLEUS = ["a", "e", "i", "o", "u", "ai", "au", "ei", "ou", "ea", "oa", "io"]
-_CODA = ["", "b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t", "x", "z", "nd", "nt", "lk", "rm", "rn", "st", "th"]
-
-# Structural patterns for how feature names are formatted
-_NAME_PATTERNS = [
-    "{root}",                  # "velkor"
-    "{root}_{suffix}",        # "velkor_3"  (suffix is a short token)
-    "{prefix}_{root}",        # "x_velkor"
-    "{prefix}_{root}_{suffix}",  # "x_velkor_3"
-]
-
-# Short prefix/suffix tokens (single chars or tiny abbreviations, not meaningful)
-_PREFIX_TOKENS = list("abcdefghijklmnopqrstuvwxyz") + [
-    "a0", "b1", "c2", "d3", "q1", "q2", "v0", "v1", "x0", "x1", "z0",
-]
-_SUFFIX_TOKENS = [str(i) for i in range(100)] + [
-    "a", "b", "c", "d", "e", "x", "y", "z", "n", "m",
-]
 
 # Distribution families for continuous features
 CONTINUOUS_DISTRIBUTIONS = ["normal", "lognormal", "uniform", "exponential", "beta"]
@@ -51,9 +20,8 @@ def generate_features(
 ) -> tuple[list[dict], dict]:
     """Procedurally generate feature specifications from seed + template.
 
-    Feature names are constructed from phonetic syllable blocks, producing
-    opaque identifiers like "brondek_z0" or "q2_floimark". The space of
-    possible names is effectively infinite.
+    Feature names use a simple positional scheme such as ``f_0`` and ``f_1``.
+    Names are only required to be unique within a dataset.
 
     Returns:
         features: List of feature spec dicts (name, type, distribution info)
@@ -125,40 +93,22 @@ def generate_features(
     return features, target
 
 
-def _generate_syllable(rng: np.random.Generator) -> str:
-    """Generate a single pronounceable syllable."""
-    onset = _ONSET[int(rng.integers(0, len(_ONSET)))]
-    nucleus = _NUCLEUS[int(rng.integers(0, len(_NUCLEUS)))]
-    coda = _CODA[int(rng.integers(0, len(_CODA)))]
-    return onset + nucleus + coda
-
-
-def _generate_root(rng: np.random.Generator) -> str:
-    """Generate a pronounceable root word from 2-3 syllables."""
-    n_syllables = int(rng.integers(2, 4))  # 2 or 3 syllables
-    return "".join(_generate_syllable(rng) for _ in range(n_syllables))
-
-
 def _generate_unique_name(
     rng: np.random.Generator,
     used_names: set[str],
 ) -> str:
-    """Generate a unique opaque feature name from phonetic building blocks."""
+    """Generate the next dataset-local feature name."""
     while True:
-        candidate = _format_name_candidate(rng)
+        candidate = _format_name_candidate(rng, used_names)
         if candidate != "target" and candidate not in used_names:
             used_names.add(candidate)
             return candidate
 
 
-def _format_name_candidate(rng: np.random.Generator) -> str:
-    """Assemble a pronounceable-but-opaque identifier."""
-    pattern = _NAME_PATTERNS[int(rng.integers(0, len(_NAME_PATTERNS)))]
-    return pattern.format(
-        root=_generate_root(rng),
-        prefix=_PREFIX_TOKENS[int(rng.integers(0, len(_PREFIX_TOKENS)))],
-        suffix=_SUFFIX_TOKENS[int(rng.integers(0, len(_SUFFIX_TOKENS)))],
-    )
+def _format_name_candidate(rng: np.random.Generator, used_names: set[str]) -> str:
+    """Assemble the next positional feature identifier."""
+    del rng  # Naming is intentionally simple and dataset-local.
+    return f"f_{len(used_names)}"
 
 
 def _generate_category_label(rng: np.random.Generator, index: int) -> str:

@@ -1,12 +1,13 @@
 """Example: Generate synthetic benchmark datasets.
 
 Run:
-    python examples/generate_datasets.py
+    python examples/scripts/generate_datasets.py
 
 Or via CLI:
     tabular-bank generate --round round-001 --secret "demo-secret"
 """
 
+import _bootstrap  # noqa: F401
 from tabular_bank.generation.generate import generate_all
 
 # Generate a sampled benchmark round
