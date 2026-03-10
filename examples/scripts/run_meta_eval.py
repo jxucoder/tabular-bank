@@ -1,7 +1,7 @@
 """Example: Run a benchmark round and compute meta-evaluation diagnostics.
 
 Run:
-    python examples/run_meta_eval.py
+    python examples/scripts/run_meta_eval.py
 
 Generates datasets, benchmarks several models, then reports on:
   - Discriminability: can each task separate models?
@@ -18,6 +18,7 @@ from sklearn.ensemble import (
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
+import _bootstrap  # noqa: F401
 from tabular_bank.context import TabularBankContext
 from tabular_bank.evaluation import run_meta_eval
 from tabular_bank.leaderboard import format_leaderboard, generate_leaderboard

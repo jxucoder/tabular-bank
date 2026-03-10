@@ -1,0 +1,22 @@
+column,role,dtype,kind,description
+row_id,id,int64,numeric,Stable row identifier for train/test/submission joins.
+f_0,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_1,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_2,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_3,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_4,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_5,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_6,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_7,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_8,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_9,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_10,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_11,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_12,feature,object,categorical,Synthetic input feature available at prediction time.
+f_13,feature,object,categorical,Synthetic input feature available at prediction time.
+f_14,feature,object,categorical,Synthetic input feature available at prediction time.
+f_15,feature,object,categorical,Synthetic input feature available at prediction time.
+f_16,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_17,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_18,feature,float64,numeric,Synthetic input feature available at prediction time.
+future_demand,target,float64,numeric,Competition target column for store demand forecast.

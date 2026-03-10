@@ -1,0 +1,26 @@
+[
+  {
+    "slug": "customer-retention-risk",
+    "title": "Customer Retention Risk",
+    "problem_type": "binary",
+    "metric": "roc_auc",
+    "n_train_rows": 280,
+    "n_test_rows": 140
+  },
+  {
+    "slug": "store-demand-forecast",
+    "title": "Store Demand Forecast",
+    "problem_type": "regression",
+    "metric": "rmse",
+    "n_train_rows": 320,
+    "n_test_rows": 160
+  },
+  {
+    "slug": "ticket-priority-routing",
+    "title": "Ticket Priority Routing",
+    "problem_type": "multiclass",
+    "metric": "log_loss",
+    "n_train_rows": 300,
+    "n_test_rows": 150
+  }
+]

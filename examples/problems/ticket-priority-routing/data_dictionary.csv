@@ -1,0 +1,16 @@
+column,role,dtype,kind,description
+row_id,id,int64,numeric,Stable row identifier for train/test/submission joins.
+f_0,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_1,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_2,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_3,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_4,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_5,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_6,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_7,feature,float64,numeric,Synthetic input feature available at prediction time.
+f_8,feature,object,categorical,Synthetic input feature available at prediction time.
+f_9,feature,object,categorical,Synthetic input feature available at prediction time.
+f_10,feature,object,categorical,Synthetic input feature available at prediction time.
+f_11,feature,object,categorical,Synthetic input feature available at prediction time.
+f_12,feature,float64,numeric,Synthetic input feature available at prediction time.
+priority_band,target,int64,numeric,Competition target column for ticket priority routing.

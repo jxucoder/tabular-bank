@@ -1,7 +1,7 @@
 """Example: Run a full benchmark with multiple models.
 
 Run:
-    python examples/run_benchmark.py
+    python examples/scripts/run_benchmark.py
 
 This generates datasets (if needed), runs multiple sklearn models across
 all tasks/splits, and produces a leaderboard with ELO ratings.
@@ -11,6 +11,7 @@ from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegress
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
 
+import _bootstrap  # noqa: F401
 from tabular_bank.context import TabularBankContext
 from tabular_bank.leaderboard import format_leaderboard, generate_leaderboard
 from tabular_bank.runner import BenchmarkResult, evaluate_model
