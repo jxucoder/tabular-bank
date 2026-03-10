@@ -12,6 +12,7 @@ requires-python = ">=3.10"
 authors = [
     {name = "tabular-bank contributors"},
 ]
+urls = {Homepage = "https://github.com/jxucoder/tabular-bank", Repository = "https://github.com/jxucoder/tabular-bank", Issues = "https://github.com/jxucoder/tabular-bank/issues"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
