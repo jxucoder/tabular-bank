@@ -69,6 +69,13 @@ def test_dataset_samples_in_range():
         )
 
 
+def test_sampled_scenario_includes_heteroscedastic_probability():
+    """Scenario sampling should expose the noise-model richness control."""
+    tmpl = sample_scenario(_make_rng(), scenario_id="test_hetero")
+    heteroscedastic_prob = tmpl["difficulty"]["heteroscedastic_prob"]
+    assert 0.0 <= heteroscedastic_prob <= 0.45
+
+
 def test_splits_structure():
     """Verify split structure: 10 repeats x 3 folds."""
     tmpl = sample_scenario(_make_rng(), scenario_id="test_0")

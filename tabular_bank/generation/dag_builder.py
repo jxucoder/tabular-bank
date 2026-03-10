@@ -1,7 +1,7 @@
 """Procedural DAG construction from seed.
 
 Builds a random Directed Acyclic Graph (DAG) that defines causal relationships
-between features. The DAG topology, functional forms, and coefficients are all
+between features. The DAG topology, sampled mechanisms, and coefficients are all
 determined by the seed — nothing is hardcoded.
 
 Realism mechanisms:
@@ -13,12 +13,15 @@ Realism mechanisms:
   against empirical ranges from real-world tabular datasets.
 - Temporal autocorrelation: root nodes can carry an AR(1) signal, injected
   during sampling.
+- Heteroscedastic noise: non-root nodes can use sampled noise models whose
+  variance depends on one of their parents.
 """
 
 from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -27,24 +30,38 @@ from tabular_bank.templates.scenarios import get_difficulty_preset
 
 @dataclass
 class Edge:
-    """A directed edge in the causal DAG with a functional form."""
+    """A directed edge in the causal DAG with a sampled mechanism.
+
+    ``form`` and related scalar fields are preserved as a backward-compatible
+    legacy interface. Internally, all edge behavior is driven by
+    ``mechanism``.
+    """
 
     parent: str
     child: str
-    form: str           # "linear", "quadratic", "threshold", "interaction",
-                        # "sigmoid", "piecewise_linear", "sinusoidal"
-    coefficient: float
-    # For threshold / piecewise_linear form
+    form: str = "linear"
+    coefficient: float = 1.0
     threshold: float = 0.0
-    # For piecewise_linear: slope on each side of the threshold
     slope_left: float = 0.0
     slope_right: float = 1.0
-    # For sinusoidal: frequency
     frequency: float = 1.0
-    # For interaction form: the second parent
     interaction_parent: str | None = None
-    # Whether this edge originates from a latent confounder
+    mechanism: dict[str, Any] | None = None
     is_confounder: bool = False
+
+    def __post_init__(self):
+        if self.mechanism is None:
+            self.mechanism = _legacy_mechanism_from_edge(self)
+        else:
+            self.mechanism = _normalize_mechanism(self.mechanism)
+
+        # Keep legacy aliases in sync for tests and downstream callers.
+        self.form = str(self.mechanism["type"])
+        self.threshold = float(self.mechanism.get("threshold", 0.0))
+        self.slope_left = float(self.mechanism.get("slope_left", 0.0))
+        self.slope_right = float(self.mechanism.get("slope_right", 1.0))
+        self.frequency = float(self.mechanism.get("frequency", 1.0))
+        self.interaction_parent = self.mechanism.get("interaction_parent")
 
 
 @dataclass
@@ -55,7 +72,8 @@ class DAGSpec:
     target: str                          # Target node name
     root_nodes: list[str]                # Nodes with no parents (exogenous)
     edges: list[Edge]                    # All directed edges
-    noise_scales: dict[str, float]       # Per-node noise magnitude
+    noise_scales: dict[str, float]       # Per-node baseline noise magnitude
+    noise_models: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Latent confounders: name -> list of observed nodes they influence
     confounders: dict[str, list[str]] = field(default_factory=dict)
     # AR(1) autocorrelation coefficients for root nodes (0 = no autocorr)
@@ -70,8 +88,20 @@ class DAGSpec:
         return [e for e in self.edges if e.child == node]
 
 
-# Functional form options
-FUNCTIONAL_FORMS = ["linear", "quadratic", "threshold", "sigmoid", "piecewise_linear", "sinusoidal"]
+# Supported mechanism families. ``FUNCTIONAL_FORMS`` is kept as an alias for
+# compatibility with older code and documentation.
+MECHANISM_TYPES = [
+    "linear",
+    "quadratic",
+    "threshold",
+    "sigmoid",
+    "tanh",
+    "piecewise_linear",
+    "sinusoidal",
+    "spline",
+    "interaction",
+]
+FUNCTIONAL_FORMS = MECHANISM_TYPES
 
 # Empirical graph statistics from real-world tabular datasets.
 # Source: survey of UCI/OpenML datasets with 10-100 features.
@@ -94,11 +124,12 @@ def build_dag(
     1. Create a random topological ordering of features + target
     2. For each non-root node, sample parent count from a geometric
        distribution (sparsity bias: most nodes get 1-2 parents)
-    3. For each edge, randomly pick a functional form and coefficient
+    3. For each edge, randomly pick a mechanism family and coefficient
     4. Inject latent confounders that create hidden common causes
     5. Optionally add AR(1) autocorrelation to root nodes
-    6. Validate graph statistics against empirical real-world ranges
-    7. The target node is always last in the ordering
+    6. Sample node noise models, including heteroscedastic residuals
+    7. Validate graph statistics against empirical real-world ranges
+    8. The target node is always last in the ordering
     """
     difficulty = get_difficulty_preset(template["difficulty"])
 
@@ -107,7 +138,6 @@ def build_dag(
     rng.shuffle(feature_names)
     all_nodes = list(feature_names) + [target["name"]]
 
-    n_features = len(feature_names)
     max_parents = difficulty["max_parents"]
     edge_density = difficulty["edge_density"]
     nonlinear_prob = difficulty["nonlinear_prob"]
@@ -116,13 +146,16 @@ def build_dag(
     edges: list[Edge] = []
     root_nodes: list[str] = []
     noise_scales: dict[str, float] = {}
+    noise_models: dict[str, dict[str, Any]] = {}
     autocorr: dict[str, float] = {}
 
     for i, node in enumerate(all_nodes):
         if i == 0:
             # First node is always a root
             root_nodes.append(node)
-            noise_scales[node] = float(rng.uniform(0.1, 1.0))
+            base_noise = float(rng.uniform(0.1, 1.0))
+            noise_scales[node] = base_noise
+            noise_models[node] = {"type": "homoscedastic", "scale": base_noise}
             autocorr[node] = _sample_autocorr(rng, difficulty)
             continue
 
@@ -140,7 +173,9 @@ def build_dag(
             if rng.random() > edge_density and i > 1:
                 # Make it a root node (sparsity: some features are exogenous)
                 root_nodes.append(node)
-                noise_scales[node] = float(rng.uniform(0.1, 1.0))
+                base_noise = float(rng.uniform(0.1, 1.0))
+                noise_scales[node] = base_noise
+                noise_models[node] = {"type": "homoscedastic", "scale": base_noise}
                 autocorr[node] = _sample_autocorr(rng, difficulty)
                 continue
             # Sparsity bias: geometric distribution means most nodes get 1-2 parents
@@ -153,41 +188,36 @@ def build_dag(
 
         # Create edges from each parent
         for parent in parents:
-            form = _select_functional_form(rng, nonlinear_prob, interaction_prob)
+            mechanism = _sample_mechanism(rng, nonlinear_prob, interaction_prob)
             # Scale coefficient to keep values in reasonable range
             coefficient = float(rng.normal(0, 1)) * 0.5
 
             edge = Edge(
                 parent=parent,
                 child=node,
-                form=form,
                 coefficient=coefficient,
+                mechanism=mechanism,
             )
 
-            if form in ("threshold", "piecewise_linear"):
-                edge.threshold = float(rng.normal(0, 1))
-
-            if form == "piecewise_linear":
-                edge.slope_left = float(rng.uniform(0, 0.5))
-                edge.slope_right = float(rng.uniform(0.5, 2.0))
-
-            if form == "sinusoidal":
-                edge.frequency = float(rng.uniform(0.5, 3.0))
-
-            if form == "interaction":
+            if edge.form == "interaction":
                 # Pick a second parent for the interaction
                 other_parents = [p for p in parents if p != parent]
                 if other_parents:
-                    edge.interaction_parent = str(rng.choice(other_parents))
+                    other_parent = str(rng.choice(other_parents))
+                    edge.interaction_parent = other_parent
+                    edge.mechanism["interaction_parent"] = other_parent
                 else:
                     # Fall back to linear if no other parent available
                     edge.form = "linear"
+                    edge.mechanism = {"type": "linear"}
 
             edges.append(edge)
 
         # Noise scale depends on difficulty
         base_noise = difficulty["noise_scale"]
-        noise_scales[node] = float(rng.uniform(base_noise * 0.5, base_noise * 1.5))
+        sampled_noise = float(rng.uniform(base_noise * 0.5, base_noise * 1.5))
+        noise_scales[node] = sampled_noise
+        noise_models[node] = _sample_noise_model(rng, sampled_noise, parents, difficulty)
 
     # Inject latent confounders
     confounders = _inject_confounders(rng, all_nodes, edges, difficulty)
@@ -198,6 +228,7 @@ def build_dag(
         root_nodes=root_nodes,
         edges=edges,
         noise_scales=noise_scales,
+        noise_models=noise_models,
         confounders=confounders,
         autocorr=autocorr,
     )
@@ -271,8 +302,8 @@ def _inject_confounders(
             edges.append(Edge(
                 parent=name,
                 child=child,
-                form="linear",
                 coefficient=coeff,
+                mechanism={"type": "linear"},
                 is_confounder=True,
             ))
 
@@ -333,19 +364,167 @@ def _validate_dag_stats(dag: DAGSpec) -> None:
         )
 
 
-_NONLINEAR_FORMS = ["quadratic", "threshold", "sigmoid", "piecewise_linear", "sinusoidal"]
+_NONLINEAR_MECHANISM_TYPES = [
+    "quadratic",
+    "threshold",
+    "sigmoid",
+    "tanh",
+    "piecewise_linear",
+    "sinusoidal",
+    "spline",
+]
 
 
-def _select_functional_form(
+def _sample_mechanism(
     rng: np.random.Generator,
     nonlinear_prob: float,
     interaction_prob: float,
-) -> str:
-    """Randomly select a functional form for an edge."""
+) -> dict[str, Any]:
+    """Randomly sample a structured mechanism specification for an edge."""
     r = rng.random()
     if r < interaction_prob:
-        return "interaction"
+        return {"type": "interaction"}
     elif r < interaction_prob + nonlinear_prob:
-        return str(rng.choice(_NONLINEAR_FORMS))
+        mechanism_type = str(rng.choice(_NONLINEAR_MECHANISM_TYPES))
+        return _sample_mechanism_params(rng, mechanism_type)
     else:
-        return "linear"
+        return {"type": "linear"}
+
+
+def _sample_mechanism_params(
+    rng: np.random.Generator,
+    mechanism_type: str,
+) -> dict[str, Any]:
+    """Sample the parameters for a specific mechanism family."""
+    if mechanism_type == "linear":
+        return {"type": "linear"}
+    if mechanism_type == "quadratic":
+        return {
+            "type": "quadratic",
+            "center": float(rng.normal(0, 0.5)),
+        }
+    if mechanism_type == "threshold":
+        threshold = float(rng.normal(0, 1))
+        low = float(rng.uniform(-0.5, 0.25))
+        high = float(rng.uniform(0.75, 1.5))
+        return {
+            "type": "threshold",
+            "threshold": threshold,
+            "low_value": low,
+            "high_value": high,
+        }
+    if mechanism_type == "sigmoid":
+        return {
+            "type": "sigmoid",
+            "slope": float(rng.uniform(0.6, 2.5)),
+            "offset": float(rng.normal(0, 0.75)),
+        }
+    if mechanism_type == "tanh":
+        return {
+            "type": "tanh",
+            "slope": float(rng.uniform(0.6, 2.5)),
+            "offset": float(rng.normal(0, 0.75)),
+        }
+    if mechanism_type == "piecewise_linear":
+        return {
+            "type": "piecewise_linear",
+            "threshold": float(rng.normal(0, 1)),
+            "slope_left": float(rng.uniform(0, 0.6)),
+            "slope_right": float(rng.uniform(0.5, 2.0)),
+        }
+    if mechanism_type == "sinusoidal":
+        return {
+            "type": "sinusoidal",
+            "frequency": float(rng.uniform(0.5, 3.0)),
+            "phase": float(rng.uniform(-np.pi, np.pi)),
+        }
+    if mechanism_type == "spline":
+        n_knots = int(rng.integers(4, 7))
+        knots = np.linspace(-2.5, 2.5, n_knots)
+        values = rng.normal(0, 0.9, size=n_knots)
+        values -= np.mean(values)
+        return {
+            "type": "spline",
+            "knots": knots.tolist(),
+            "values": values.tolist(),
+        }
+    if mechanism_type == "interaction":
+        return {"type": "interaction"}
+    raise ValueError(f"Unknown mechanism type: {mechanism_type}")
+
+
+def _sample_noise_model(
+    rng: np.random.Generator,
+    base_scale: float,
+    parents: list[str],
+    difficulty: dict[str, Any],
+) -> dict[str, Any]:
+    """Sample a node noise model from the scenario difficulty settings."""
+    heteroscedastic_prob = float(difficulty.get("heteroscedastic_prob", 0.0))
+    if not parents or rng.random() >= heteroscedastic_prob:
+        return {"type": "homoscedastic", "scale": base_scale}
+
+    low_multiplier = float(rng.uniform(0.35, 1.0))
+    high_multiplier = float(rng.uniform(1.0, 2.6))
+    if rng.random() < 0.5:
+        low_multiplier, high_multiplier = high_multiplier, low_multiplier
+
+    return {
+        "type": "heteroscedastic",
+        "base_scale": base_scale,
+        "driver": str(rng.choice(parents)),
+        "low_multiplier": low_multiplier,
+        "high_multiplier": high_multiplier,
+    }
+
+
+def _legacy_mechanism_from_edge(edge: Edge) -> dict[str, Any]:
+    """Convert legacy scalar edge fields into a structured mechanism dict."""
+    mechanism: dict[str, Any] = {"type": edge.form}
+    if edge.form in ("threshold", "piecewise_linear"):
+        mechanism["threshold"] = float(edge.threshold)
+    if edge.form == "piecewise_linear":
+        mechanism["slope_left"] = float(edge.slope_left)
+        mechanism["slope_right"] = float(edge.slope_right)
+    if edge.form == "sinusoidal":
+        mechanism["frequency"] = float(edge.frequency)
+    if edge.form == "interaction" and edge.interaction_parent is not None:
+        mechanism["interaction_parent"] = edge.interaction_parent
+    return _normalize_mechanism(mechanism)
+
+
+def _normalize_mechanism(mechanism: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a mechanism dict so all expected keys are present."""
+    normalized = dict(mechanism)
+    mechanism_type = str(normalized.get("type", "linear"))
+    normalized["type"] = mechanism_type
+
+    if mechanism_type == "quadratic":
+        normalized.setdefault("center", 0.0)
+    elif mechanism_type == "threshold":
+        normalized.setdefault("threshold", 0.0)
+        normalized.setdefault("low_value", 0.0)
+        normalized.setdefault("high_value", 1.0)
+    elif mechanism_type in ("sigmoid", "tanh"):
+        normalized.setdefault("slope", 1.0)
+        normalized.setdefault("offset", 0.0)
+    elif mechanism_type == "piecewise_linear":
+        normalized.setdefault("threshold", 0.0)
+        normalized.setdefault("slope_left", 0.0)
+        normalized.setdefault("slope_right", 1.0)
+    elif mechanism_type == "sinusoidal":
+        normalized.setdefault("frequency", 1.0)
+        normalized.setdefault("phase", 0.0)
+    elif mechanism_type == "spline":
+        knots = normalized.get("knots") or [-2.5, -0.5, 0.5, 2.5]
+        values = normalized.get("values") or [-1.0, -0.2, 0.2, 1.0]
+        if len(knots) != len(values):
+            raise ValueError("Spline mechanism requires equally sized knots and values")
+        normalized["knots"] = [float(k) for k in knots]
+        normalized["values"] = [float(v) for v in values]
+    elif mechanism_type == "interaction":
+        normalized.setdefault("interaction_parent", None)
+    elif mechanism_type != "linear":
+        raise ValueError(f"Unknown mechanism type: {mechanism_type}")
+
+    return normalized

@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>tabular-bank dataset generation study</title>
+    <meta
+      name="description"
+      content="A clean scientific website explaining how tabular-bank generates a synthetic benchmark dataset from a secret seed."
+    >
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#top">tabular-bank</a>
+        <nav class="site-nav" aria-label="Sections">
+          <a href="#overview">Overview</a>
+          <a href="#scenario">Scenario</a>
+          <a href="#artifacts">Artifacts</a>
+          <a href="#splits">Splits</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top" class="page">
+      <section class="hero">
+        <p class="kicker">Procedural tabular benchmark generation</p>
+        <h1>How one synthetic dataset is generated</h1>
+        <p class="lead">
+          This page presents one <code>tabular-bank</code> dataset as a compact
+          case study. The sample below was generated from
+          <code>demo-secret</code> and <code>round-demo</code>, then saved with
+          metadata and repeated evaluation folds.
+        </p>
+
+        <div class="metric-grid" aria-label="Dataset summary">
+          <article class="metric-card">
+            <span class="metric-label">Dataset id</span>
+            <strong>round-demo_sampled_0</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Problem type</span>
+            <strong>Regression</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Rows</span>
+            <strong>5,542</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Features</span>
+            <strong>36 total</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Missingness</span>
+            <strong>4.3% MCAR</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Evaluation protocol</span>
+            <strong>10 x 3 folds</strong>
+          </article>
+        </div>
+      </section>
+
+      <section id="overview" class="section">
+        <div class="section-heading">
+          <p class="kicker">Overview</p>
+          <h2>Generation pipeline</h2>
+          <p>
+            The generator follows a fixed sequence. Each stage is deterministic
+            given the secret and round id, but unknown in advance without the
+            secret.
+          </p>
+        </div>
+
+        <ol class="pipeline">
+          <li>
+            <div class="pipeline-index">1</div>
+            <div class="pipeline-body">
+              <h3>Derive the round seed</h3>
+              <p>
+                The master secret and round id are combined with HMAC-SHA256 to
+                produce a round seed. Independent seeds are then derived for
+                feature generation, DAG construction, row sampling, and split
+                generation.
+              </p>
+              <pre><code>round_seed = HMAC_SHA256(master_secret, round_id)
+feature_seed = HMAC(round_seed, "features-0")
+dag_seed = HMAC(round_seed, "dag-0")
+data_seed = HMAC(round_seed, "dataset-0")
+split_seed = HMAC(round_seed, "split-0")</code></pre>
+            </div>
+          </li>
+          <li>
+            <div class="pipeline-index">2</div>
+            <div class="pipeline-body">
+              <h3>Sample a scenario</h3>
+              <p>
+                A scenario is drawn from continuous parameter ranges rather than
+                a short library of fixed templates. This determines problem type,
+                feature count, sample size, missingness, and difficulty.
+              </p>
+            </div>
+          </li>
+          <li>
+            <div class="pipeline-index">3</div>
+            <div class="pipeline-body">
+              <h3>Generate feature specifications</h3>
+              <p>
+                Informative features receive opaque names, types, and either
+                distribution parameters or categorical probabilities. The target
+                column is generated from the chosen problem type.
+              </p>
+            </div>
+          </li>
+          <li>
+            <div class="pipeline-index">4</div>
+            <div class="pipeline-body">
+              <h3>Build a causal DAG</h3>
+              <p>
+                The graph stage samples parent sets, functional forms,
+                coefficients, latent confounders, and optional autocorrelation
+                on root nodes.
+              </p>
+            </div>
+          </li>
+          <li>
+            <div class="pipeline-index">5</div>
+            <div class="pipeline-body">
+              <h3>Sample rows and apply missingness</h3>
+              <p>
+                Rows are generated in topological order. Root signals are sampled
+                first, child nodes inherit transformed parent effects, and the
+                target is sampled last. Missing values are then injected without
+                masking the target column.
+              </p>
+            </div>
+          </li>
+          <li>
+            <div class="pipeline-index">6</div>
+            <div class="pipeline-body">
+              <h3>Write benchmark artifacts</h3>
+              <p>
+                The final dataset is saved together with metadata and repeated
+                train/test folds so benchmark code can consume it directly.
+              </p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section id="scenario" class="section">
+        <div class="section-heading">
+          <p class="kicker">Scenario</p>
+          <h2>Sampled configuration for this dataset</h2>
+          <p>
+            The example below shows the sampled settings for
+            <code>sampled_0</code>. Values are taken from a real run of the
+            generator.
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="panel">
+            <h3>Core scenario parameters</h3>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th>Scenario id</th><td><code>sampled_0</code></td></tr>
+                <tr><th>Problem type</th><td>Regression</td></tr>
+                <tr><th>Informative feature range</th><td>27 to 29</td></tr>
+                <tr><th>Sample size range</th><td>1,583 to 13,811</td></tr>
+                <tr><th>Categorical ratio</th><td>0.2412</td></tr>
+                <tr><th>Noise feature ratio</th><td>0.2606</td></tr>
+                <tr><th>Missing rate</th><td>0.0428</td></tr>
+                <tr><th>Missing mechanism</th><td>MCAR</td></tr>
+              </tbody>
+            </table>
+          </article>
+
+          <article class="panel">
+            <h3>Difficulty parameters</h3>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th>Noise scale</th><td>0.9643</td></tr>
+                <tr><th>Nonlinear edge probability</th><td>0.3210</td></tr>
+                <tr><th>Interaction probability</th><td>0.0937</td></tr>
+                <tr><th>Edge density</th><td>0.5196</td></tr>
+                <tr><th>Max parents</th><td>2</td></tr>
+                <tr><th>Latent confounders</th><td>3</td></tr>
+                <tr><th>Confounder strength</th><td>0.6478</td></tr>
+                <tr><th>Temporal probability</th><td>0.1079</td></tr>
+                <tr><th>Max autocorrelation</th><td>0.7373</td></tr>
+                <tr><th>Root correlation strength</th><td>0.1427</td></tr>
+              </tbody>
+            </table>
+          </article>
+        </div>
+
+        <article class="panel note-panel">
+          <h3>Derived seeds</h3>
+          <div class="seed-grid">
+            <div><span>Round seed</span><code>28ad7e1d2c83fc61...</code></div>
+            <div><span>Feature seed</span><code>2066315460</code></div>
+            <div><span>DAG seed</span><code>1048815393</code></div>
+            <div><span>Data seed</span><code>1252576920</code></div>
+            <div><span>Split seed</span><code>1850215791</code></div>
+          </div>
+        </article>
+      </section>
+
+      <section id="artifacts" class="section">
+        <div class="section-heading">
+          <p class="kicker">Artifacts</p>
+          <h2>What the generator produced</h2>
+          <p>
+            The following previews show feature specifications, a subset of DAG
+            edges, and selected rows from the final table.
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="panel">
+            <h3>Feature schema preview</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Definition</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>v0_graugscar</code></td>
+                  <td>continuous</td>
+                  <td>uniform, low=0.9822, high=146.8045</td>
+                </tr>
+                <tr>
+                  <td><code>v_smoatteasflaud_96</code></td>
+                  <td>continuous</td>
+                  <td>uniform, low=-47.2288, high=-41.0453</td>
+                </tr>
+                <tr>
+                  <td><code>y_frimgluntlaist_53</code></td>
+                  <td>continuous</td>
+                  <td>normal, mean=-6.3835, std=49.1388</td>
+                </tr>
+                <tr>
+                  <td><code>b_cremklarstri_48</code></td>
+                  <td>continuous</td>
+                  <td>exponential, scale=10.6933</td>
+                </tr>
+                <tr>
+                  <td><code>v_prainsmog</code></td>
+                  <td>continuous</td>
+                  <td>beta, a=3.7413, b=2.2377</td>
+                </tr>
+                <tr>
+                  <td><code>fozqueant_91</code></td>
+                  <td>categorical</td>
+                  <td>4 categories, p=[0.2551, 0.1378, 0.5670, 0.0402]</td>
+                </tr>
+                <tr>
+                  <td><code>frormgroant_83</code></td>
+                  <td>categorical</td>
+                  <td>3 categories, p=[0.1044, 0.2412, 0.6544]</td>
+                </tr>
+                <tr>
+                  <td><code>quaustkrithtrath_41</code></td>
+                  <td>categorical</td>
+                  <td>3 categories, p=[0.1440, 0.7484, 0.1076]</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="caption">
+              The sampled scenario produced 29 informative features. The row
+              sampler later injected 7 additional noise features, yielding
+              36 total observed features.
+            </p>
+          </article>
+
+          <article class="panel">
+            <h3>DAG edge preview</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Parent</th>
+                  <th>Child</th>
+                  <th>Form</th>
+                  <th>Coefficient</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>x0_geiklousham_91</code></td>
+                  <td><code>quaustkrithtrath_41</code></td>
+                  <td>linear</td>
+                  <td>-0.3010</td>
+                </tr>
+                <tr>
+                  <td><code>x1_pludtreaz</code></td>
+                  <td><code>koklut_d</code></td>
+                  <td>sinusoidal</td>
+                  <td>-0.2595</td>
+                </tr>
+                <tr>
+                  <td><code>quaustkrithtrath_41</code></td>
+                  <td><code>v0_graugscar</code></td>
+                  <td>piecewise_linear</td>
+                  <td>0.1683</td>
+                </tr>
+                <tr>
+                  <td><code>koklut_d</code></td>
+                  <td><code>proarmscoud_79</code></td>
+                  <td>linear</td>
+                  <td>0.7175</td>
+                </tr>
+                <tr>
+                  <td><code>koklut_d</code></td>
+                  <td><code>k_drendflioktront</code></td>
+                  <td>interaction</td>
+                  <td>-0.9438</td>
+                </tr>
+                <tr>
+                  <td><code>k_drendflioktront</code></td>
+                  <td><code>d3_leangrairm_57</code></td>
+                  <td>sigmoid</td>
+                  <td>-0.0702</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="callout">
+              <p><strong>Graph summary.</strong> This sample contains 41 edges, 10 root nodes, and 3 latent confounders.</p>
+              <p><strong>Autocorrelation.</strong> Root node <code>r_geimtrif_37</code> received AR(1) autocorrelation with rho=0.4428.</p>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <h3>Selected rows from the final dataset</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><code>v0_graugscar</code></th>
+                <th><code>fozqueant_91</code></th>
+                <th><code>proarmscoud_79</code></th>
+                <th><code>x1_pludtreaz</code></th>
+                <th><code>k_drendflioktront</code></th>
+                <th><code>target</code></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>82.7474</td>
+                <td>cat_2</td>
+                <td>103.0627</td>
+                <td>75.2005</td>
+                <td>0.5878</td>
+                <td>-0.1676</td>
+              </tr>
+              <tr>
+                <td>77.6165</td>
+                <td>cat_1</td>
+                <td class="missing">NA</td>
+                <td>71.3853</td>
+                <td>0.3537</td>
+                <td>-0.6184</td>
+              </tr>
+              <tr>
+                <td>73.8276</td>
+                <td>cat_2</td>
+                <td>92.5537</td>
+                <td class="missing">NA</td>
+                <td>0.5378</td>
+                <td>-1.6900</td>
+              </tr>
+              <tr>
+                <td>17.7036</td>
+                <td>cat_1</td>
+                <td>100.5947</td>
+                <td>87.7762</td>
+                <td>0.6981</td>
+                <td>-2.0771</td>
+              </tr>
+              <tr>
+                <td>19.9664</td>
+                <td>cat_2</td>
+                <td class="missing">NA</td>
+                <td>69.9179</td>
+                <td>0.8065</td>
+                <td>0.9068</td>
+              </tr>
+              <tr>
+                <td>46.5681</td>
+                <td>cat_2</td>
+                <td>103.4891</td>
+                <td>82.6968</td>
+                <td>0.4197</td>
+                <td>-1.2144</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="caption">
+            Missing values are shown after post-processing. The target column is
+            never masked.
+          </p>
+        </article>
+      </section>
+
+      <section id="splits" class="section">
+        <div class="section-heading">
+          <p class="kicker">Benchmark packaging</p>
+          <h2>Saved outputs and evaluation folds</h2>
+          <p>
+            After sampling, the dataset is written to disk in a benchmark-ready
+            form.
+          </p>
+        </div>
+
+        <div class="three-column">
+          <article class="panel">
+            <h3>Saved files</h3>
+            <ul class="plain-list">
+              <li><code>dataset.csv</code> with all rows and columns</li>
+              <li><code>metadata.json</code> with counts and task metadata</li>
+              <li><code>splits.json</code> with repeated train/test indices</li>
+              <li><code>.complete</code> marker for cache reuse</li>
+            </ul>
+          </article>
+
+          <article class="panel">
+            <h3>Split protocol</h3>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th>Repeats</th><td>10</td></tr>
+                <tr><th>Folds per repeat</th><td>3</td></tr>
+                <tr><th>Total splits</th><td>30</td></tr>
+                <tr><th>First train size</th><td>3,694</td></tr>
+                <tr><th>First test size</th><td>1,848</td></tr>
+              </tbody>
+            </table>
+          </article>
+
+          <article class="panel">
+            <h3>Other sampled tasks in the same round</h3>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th><code>sampled_0</code></th><td>regression, 5,542 rows, 36 features</td></tr>
+                <tr><th><code>sampled_2</code></th><td>multiclass, 3,568 rows, 25 features, 8 classes</td></tr>
+                <tr><th><code>sampled_3</code></th><td>binary, 7,819 rows, 27 features</td></tr>
+              </tbody>
+            </table>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Scientific demo page for <code>tabular-bank</code>. Example generated from
+        <code>demo-secret</code> and <code>round-demo</code>.
+      </p>
+    </footer>
+  </body>
+</html>

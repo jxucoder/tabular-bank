@@ -8,7 +8,7 @@ TabArena is the leading benchmark for tabular ML models, but it uses real-world 
 
 ### Anti-Contamination Architecture
 
-- **Procedural everything**: Feature names, DAG topology, distributions, functional forms, coefficients, noise — all generated from the seed
+- **Procedural structure**: Feature specs, DAG topology, mechanism families, coefficients, and noise models are generated from the seed
 - **Cryptographic seed derivation**: HMAC-SHA256 ensures datasets are unpredictable without the master secret
 - **Rotating benchmark rounds**: Each round uses a fresh seed; past rounds' seeds are published after expiry
 - **Auditable fairness**: All generation code is public — anyone can verify the engine is unbiased
@@ -88,10 +88,10 @@ flowchart TD
     FG --> FO["Names · Types · Distributions"]
 
     DS --> DB["DAG Builder"]
-    DB --> DO["Causal Graph · Functional Forms"]
+    DB --> DO["Causal Graph · Sampled Mechanisms\n(spline, tanh, interaction, etc.)"]
 
     AS --> SM["Sampler"]
-    SM --> SO["Tabular DataFrame"]
+    SM --> SO["Tabular DataFrame\n+ Heteroscedastic Residuals"]
 
     SS --> SG["Split Generator"]
     SG --> SGO["Cross-Validation Folds\n(10 repeats × 3 folds)"]
@@ -104,12 +104,18 @@ Rather than fixed hand-crafted templates, `tabular-bank` samples all scenario pa
 **Sampled axes include:**
 - Problem type: binary classification, multiclass, regression
 - Feature count, sample size, categorical ratio
-- Difficulty: noise scale, nonlinearity probability, interaction probability, DAG edge density
+- Difficulty: noise scale, nonlinearity probability, interaction probability, heteroscedastic noise probability, DAG edge density
 - DAG complexity: confounder count and strength, max parent count
 - Missing values: rate and mechanism (MCAR / MAR / MNAR)
 - Class imbalance ratio (binary tasks)
 - Temporal autocorrelation in root features
 - Root feature correlations (multivariate Gaussian)
+
+Edges no longer draw from a tiny fixed "form" enum alone. Each edge samples a
+structured mechanism specification, with families including linear, threshold,
+sigmoid, tanh, piecewise-linear, sinusoidal, spline, and interaction effects.
+Non-root nodes can also sample heteroscedastic residual noise models whose
+variance depends on one of their parents.
 
 ```python
 from tabular_bank.generation.engine import generate_sampled_datasets

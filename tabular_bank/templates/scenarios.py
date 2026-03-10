@@ -5,21 +5,23 @@ rather than fixed hand-crafted templates. Any valid configuration has non-zero
 probability of being generated, giving coverage guarantees over the space of
 tabular ML problems.
 
-All features, DAG structures, distributions, and data — including feature names —
-are procedurally generated from the seed using opaque identifiers.
+All feature specs, DAG structures, distributions, and data are procedurally
+generated from the seed. Column names themselves use simple dataset-local
+identifiers like ``f_0`` and ``f_1``.
 """
 
 from __future__ import annotations
 
 
-# Difficulty presets control noise, nonlinearity, and DAG density
+# Difficulty presets control noise, mechanism richness, and DAG density
 DIFFICULTY_PRESETS: dict[str, dict] = {
     "easy": {
         "noise_scale": 0.3,
-        "nonlinear_prob": 0.1,       # 10% of edges use nonlinear functions
-        "interaction_prob": 0.05,    # 5% chance of interaction terms
+        "nonlinear_prob": 0.1,       # 10% of edges use nonlinear mechanisms
+        "interaction_prob": 0.05,    # 5% chance of interaction mechanisms
         "edge_density": 0.3,         # Sparse DAG
         "max_parents": 3,
+        "heteroscedastic_prob": 0.05,
         # Confounder settings
         "n_confounders": 1,
         "confounder_strength": 0.2,
@@ -35,6 +37,7 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
         "interaction_prob": 0.15,
         "edge_density": 0.4,
         "max_parents": 4,
+        "heteroscedastic_prob": 0.15,
         # Confounder settings
         "n_confounders": 2,
         "confounder_strength": 0.4,
@@ -50,6 +53,7 @@ DIFFICULTY_PRESETS: dict[str, dict] = {
         "interaction_prob": 0.25,
         "edge_density": 0.5,
         "max_parents": 5,
+        "heteroscedastic_prob": 0.3,
         # Confounder settings
         "n_confounders": 3,
         "confounder_strength": 0.6,
@@ -95,6 +99,7 @@ SCENARIO_SPACE = {
     "noise_scale_range": (0.1, 1.0),
     "nonlinear_prob_range": (0.05, 0.6),
     "interaction_prob_range": (0.0, 0.3),
+    "heteroscedastic_prob_range": (0.0, 0.45),
     "edge_density_range": (0.45, 0.65),
     "max_parents_range": (2, 6),
     "n_confounders_range": (0, 4),
@@ -119,8 +124,6 @@ def sample_scenario(rng, scenario_id: str = "sampled") -> dict:
     Returns:
         A scenario dict compatible with the fixed-template format.
     """
-    import numpy as _np
-
     sp = SCENARIO_SPACE
 
     # Problem type
@@ -165,6 +168,7 @@ def sample_scenario(rng, scenario_id: str = "sampled") -> dict:
         "noise_scale": float(rng.uniform(*sp["noise_scale_range"])),
         "nonlinear_prob": float(rng.uniform(*sp["nonlinear_prob_range"])),
         "interaction_prob": float(rng.uniform(*sp["interaction_prob_range"])),
+        "heteroscedastic_prob": float(rng.uniform(*sp["heteroscedastic_prob_range"])),
         "edge_density": float(rng.uniform(*sp["edge_density_range"])),
         "max_parents": int(
             rng.integers(sp["max_parents_range"][0], sp["max_parents_range"][1] + 1)

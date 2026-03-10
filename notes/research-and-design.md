@@ -37,7 +37,7 @@ deterministic given the secret but unpredictable without it.
 | **SPADA** (arXiv 2507.19334) | 2025 | LLM-induced sparse dependency graphs. 9,500x faster than LLM baselines. |
 | **StructSynth** (arXiv 2508.02601) | 2025 | LLM + DAG structure discovery for low-data regimes. Conceptually similar to our approach but in reverse (they discover the DAG, we define it). |
 | **GPT-4o zero-shot** (arXiv 2502.14523) | 2025 | GPT-4o generates high-fidelity tabular data via prompting, outperforming CTGAN. Strengthens our contamination motivation. |
-| **DAGAF** (Springer, 2025) | 2025 | DAG-based generation with ANM, LiNGAM, Post-Nonlinear models. Inspired our richer functional forms (sigmoid, piecewise-linear). |
+| **DAGAF** (Springer, 2025) | 2025 | DAG-based generation with ANM, LiNGAM, Post-Nonlinear models. Inspired our richer sampled mechanisms (sigmoid, piecewise-linear, spline). |
 | **CausalMix** (arXiv 2603.03587) | Mar 2026 | Controllable causal mechanisms via mixture-of-Gaussians. Parameterizes confounding strength and effect heterogeneity independently. Inspired separating difficulty axes. |
 
 ### Benchmark Meta-Evaluation
@@ -118,15 +118,31 @@ data papers:
 Injected as a post-processing step after DAG sampling, before splits.
 Target column is never masked.
 
-### Richer functional forms
+### Richer sampled mechanisms
 
 The original four forms (linear, quadratic, threshold, interaction)
-miss common real-world patterns. From DAGAF and the causal DAG
-literature, we added:
+miss common real-world patterns. A fixed public menu is also easier
+for benchmark participants to adapt to over time. From DAGAF and the
+causal DAG literature, we expanded the mechanism family and moved edge
+specification to structured mechanism dicts rather than a single enum.
+
+Current mechanism families include:
 
 - **sigmoid**: saturating relationships (biological/medical data)
+- **tanh**: smooth bounded responses with signed saturation
 - **piecewise_linear**: threshold effects with slopes, not just steps
 - **sinusoidal**: periodic/seasonal effects
+- **spline**: smooth local nonlinearities without committing to a single analytic form
+
+### Heteroscedastic residual noise
+
+Real datasets often violate constant-variance assumptions. We now sample
+per-node noise models, not just scalar noise scales. Non-root nodes can
+use **heteroscedastic** residuals where the local noise scale depends on a
+selected parent feature via a smooth gating function.
+
+This broadens the benchmark support beyond "signal shape only" and makes it
+harder to overfit to homoscedastic residual structure.
 
 ---
 
@@ -169,7 +185,7 @@ Every generation improvement should be validated via:
 ### Phase 0: Meta-Evaluation
 - `tabular_bank/evaluation/meta_eval.py` — discriminability, concordance, diversity
 - `tabular_bank/leaderboard.py` — added `get_task_scores()` for score matrix extraction
-- `examples/run_meta_eval.py` — example script
+- `examples/scripts/run_meta_eval.py` — example script
 
 ### Phase 1: Generation Improvements
 - **Class imbalance** — `imbalance_ratio` in scenarios, sigmoid bias in sampler
@@ -177,13 +193,14 @@ Every generation improvement should be validated via:
 - **Parametric scenarios** — `sample_scenario()`, `SCENARIO_SPACE`, `generate_sampled_datasets()`
 - **Correlated roots** — `root_correlation_strength` in difficulty presets, multivariate Gaussian sampling
 - **Missing values** — `tabular_bank/generation/missing.py` with MCAR/MAR/MNAR
-- **Richer forms** — sigmoid, piecewise_linear, sinusoidal in dag_builder + sampler
+- **Structured mechanisms** — edge behavior now uses sampled mechanism dicts, with tanh and spline support in dag_builder + sampler
+- **Heteroscedastic noise** — per-node noise models can depend on a driver parent instead of using constant variance everywhere
 
 ### Runner Fix
 - `_encode_features()` now handles NaN in both categorical and numeric columns (median imputation for numerics, -1 for categoricals)
 
 ### Follow-on Hardening
-- **Phonetic feature naming restored** — informative and noise features now use opaque seeded identifiers again
+- **Simple feature naming restored** — informative and noise features now use readable dataset-local labels like `f_0`, `f_1`, ...
 - **Round metadata made authoritative** — cache loading now follows `scenario_ids`, avoiding stale extra datasets when `n_scenarios` changes
 - **Sampler fixes** — confounders now affect root nodes, and autocorrelation is applied before marginal distribution transforms so supports stay valid
 
@@ -205,7 +222,7 @@ Every generation improvement should be validated via:
 - [ ] Add feature engineering artifacts (derived ratios, aggregates, binned versions) for extra realism
 - [ ] Expose meta-eval metrics in the CLI (`tabular-bank info --meta-eval`)
 - [ ] Write integration test that runs `generate_sampled_datasets()` end-to-end with meta-eval
-- [ ] Consider heteroscedastic noise (noise scale depends on feature values) for more realistic error structure
+- [ ] Add regime-switch / mixture mechanisms beyond single-edge smooth families
 - [ ] Benchmark generation speed for large sampled rounds (50+ scenarios)
 
 ### Research Questions

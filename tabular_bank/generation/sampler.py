@@ -2,7 +2,7 @@
 
 Samples tabular data by traversing the DAG in topological order, generating
 root nodes from their specified distributions, and computing child nodes
-via the functional relationships defined in the DAG edges.
+via sampled causal mechanisms attached to DAG edges.
 """
 
 from __future__ import annotations
@@ -99,14 +99,18 @@ def sample_dataset(
                 else:
                     parent_normalized = parent_data - np.mean(parent_data)
 
-                contribution = _apply_functional_form(
+                contribution = _apply_mechanism(
                     parent_normalized, edge, data
                 )
                 latent += edge.coefficient * contribution
 
-            # Add noise
-            noise_scale = dag.noise_scales.get(node, 0.5)
-            latent += rng.normal(0, noise_scale, size=n_samples)
+            # Add node-specific residual noise. Newer DAG specs carry a
+            # structured noise model; older ones fall back to a scalar scale.
+            noise_model = dag.noise_models.get(
+                node,
+                {"type": "homoscedastic", "scale": dag.noise_scales.get(node, 0.5)},
+            )
+            latent += _sample_node_noise(rng, noise_model, data, n_samples)
 
             if node == dag.target:
                 # Handle target separately
@@ -267,31 +271,54 @@ def _sample_root(
         return rng.normal(0, 1, size=n_samples)
 
 
-def _apply_functional_form(
+def _apply_mechanism(
     parent_data: np.ndarray,
     edge,
     all_data: dict[str, np.ndarray],
 ) -> np.ndarray:
-    """Apply the edge's functional form to parent data."""
-    if edge.form == "linear":
+    """Apply an edge's mechanism to normalized parent data."""
+    mechanism = edge.mechanism
+    mechanism_type = mechanism["type"]
+
+    if mechanism_type == "linear":
         return parent_data
-    elif edge.form == "quadratic":
-        return parent_data ** 2
-    elif edge.form == "threshold":
-        return (parent_data > edge.threshold).astype(float)
-    elif edge.form == "sigmoid":
-        return expit(parent_data)
-    elif edge.form == "piecewise_linear":
-        below = parent_data <= edge.threshold
+    elif mechanism_type == "quadratic":
+        center = float(mechanism.get("center", 0.0))
+        return (parent_data - center) ** 2
+    elif mechanism_type == "threshold":
+        threshold = float(mechanism.get("threshold", 0.0))
+        low_value = float(mechanism.get("low_value", 0.0))
+        high_value = float(mechanism.get("high_value", 1.0))
+        return np.where(parent_data > threshold, high_value, low_value)
+    elif mechanism_type == "sigmoid":
+        slope = float(mechanism.get("slope", 1.0))
+        offset = float(mechanism.get("offset", 0.0))
+        return expit(slope * (parent_data - offset))
+    elif mechanism_type == "tanh":
+        slope = float(mechanism.get("slope", 1.0))
+        offset = float(mechanism.get("offset", 0.0))
+        return np.tanh(slope * (parent_data - offset))
+    elif mechanism_type == "piecewise_linear":
+        threshold = float(mechanism.get("threshold", 0.0))
+        slope_left = float(mechanism.get("slope_left", 0.0))
+        slope_right = float(mechanism.get("slope_right", 1.0))
+        below = parent_data <= threshold
         out = np.empty_like(parent_data)
-        out[below] = edge.slope_left * (parent_data[below] - edge.threshold)
-        out[~below] = edge.slope_right * (parent_data[~below] - edge.threshold)
+        out[below] = slope_left * (parent_data[below] - threshold)
+        out[~below] = slope_right * (parent_data[~below] - threshold)
         return out
-    elif edge.form == "sinusoidal":
-        return np.sin(edge.frequency * parent_data)
-    elif edge.form == "interaction":
-        if edge.interaction_parent and edge.interaction_parent in all_data:
-            other = all_data[edge.interaction_parent]
+    elif mechanism_type == "sinusoidal":
+        frequency = float(mechanism.get("frequency", 1.0))
+        phase = float(mechanism.get("phase", 0.0))
+        return np.sin(frequency * parent_data + phase)
+    elif mechanism_type == "spline":
+        knots = np.asarray(mechanism["knots"], dtype=float)
+        values = np.asarray(mechanism["values"], dtype=float)
+        return np.interp(parent_data, knots, values, left=values[0], right=values[-1])
+    elif mechanism_type == "interaction":
+        interaction_parent = mechanism.get("interaction_parent") or edge.interaction_parent
+        if interaction_parent and interaction_parent in all_data:
+            other = all_data[interaction_parent]
             other_std = np.std(other)
             if other_std > 0:
                 other_normalized = (other - np.mean(other)) / other_std
@@ -301,6 +328,41 @@ def _apply_functional_form(
         return parent_data
     else:
         return parent_data
+
+
+def _sample_node_noise(
+    rng: np.random.Generator,
+    noise_model: dict,
+    all_data: dict[str, np.ndarray],
+    n_samples: int,
+) -> np.ndarray:
+    """Sample node residual noise from a structured noise model."""
+    noise_type = noise_model.get("type", "homoscedastic")
+
+    if noise_type == "homoscedastic":
+        scale = float(noise_model.get("scale", noise_model.get("base_scale", 0.5)))
+        return rng.normal(0, scale, size=n_samples)
+
+    if noise_type == "heteroscedastic":
+        driver = noise_model.get("driver")
+        base_scale = float(noise_model.get("base_scale", noise_model.get("scale", 0.5)))
+        if not driver or driver not in all_data:
+            return rng.normal(0, base_scale, size=n_samples)
+
+        driver_data = np.asarray(all_data[driver], dtype=float)
+        driver_std = np.std(driver_data)
+        if driver_std > 0:
+            driver_normalized = (driver_data - np.mean(driver_data)) / driver_std
+        else:
+            driver_normalized = driver_data - np.mean(driver_data)
+
+        low_multiplier = float(noise_model.get("low_multiplier", 0.75))
+        high_multiplier = float(noise_model.get("high_multiplier", 1.5))
+        blend = expit(driver_normalized)
+        scales = base_scale * (low_multiplier + (high_multiplier - low_multiplier) * blend)
+        return rng.normal(0, scales, size=n_samples)
+
+    raise ValueError(f"Unknown noise model type: {noise_type}")
 
 
 def _transform_to_distribution(
