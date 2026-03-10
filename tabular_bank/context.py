@@ -1,4 +1,4 @@
-"""SyntheticTabContext — the main entry point for benchmarking.
+"""TabularBankContext — the main entry point for benchmarking.
 
 Mirrors TabArena's BenchmarkContext / TabArenaContext. Loads (or generates)
 all datasets for a benchmark round and provides a unified interface for
@@ -13,21 +13,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from synthetic_tab.generation.generate import generate_all
-from synthetic_tab.generation.seed import get_default_cache_dir, get_master_secret
-from synthetic_tab.tasks import SyntheticTask, load_tasks_from_cache
+from tabular_bank.generation.generate import generate_all
+from tabular_bank.generation.seed import get_default_cache_dir, get_master_secret
+from tabular_bank.tasks import SyntheticTask, load_tasks_from_cache
 
 logger = logging.getLogger(__name__)
 
 
-class SyntheticTabContext:
+class TabularBankContext:
     """Context manager for synthetic benchmark datasets.
 
     Loads datasets for a benchmark round from cache. If datasets don't exist
     and auto_generate=True, generates them first (requires master_secret).
 
     Example:
-        ctx = SyntheticTabContext(round_id="round-001")
+        ctx = TabularBankContext(round_id="round-001")
         for task in ctx.get_tasks():
             print(task.name, task.n_samples, task.problem_type)
     """
@@ -38,8 +38,10 @@ class SyntheticTabContext:
         master_secret: str | None = None,
         cache_dir: str | Path | None = None,
         auto_generate: bool = True,
+        n_scenarios: int = 10,
     ):
         self.round_id = round_id
+        self.n_scenarios = n_scenarios
         self.cache_dir = Path(cache_dir) if cache_dir else get_default_cache_dir()
         self.round_dir = self.cache_dir / round_id
         self._tasks: list[SyntheticTask] | None = None
@@ -51,6 +53,7 @@ class SyntheticTabContext:
             generate_all(
                 master_secret=secret,
                 round_id=round_id,
+                n_scenarios=n_scenarios,
                 cache_dir=str(self.cache_dir),
             )
 
@@ -69,16 +72,25 @@ class SyntheticTabContext:
                 meta = json.load(f)
         except (json.JSONDecodeError, OSError):
             return False
-        for scenario_id in meta.get("scenarios", []):
-            ds_dir = self.round_dir / scenario_id
-            if not (ds_dir / ".complete").exists():
-                return False
-        return True
+        n_datasets = meta.get("n_datasets", 0)
+        if n_datasets == 0 or n_datasets != self.n_scenarios:
+            return False
+        scenario_ids = meta.get("scenario_ids", [])
+        if scenario_ids:
+            return all((self.round_dir / scenario_id / ".complete").exists() for scenario_id in scenario_ids)
+
+        complete_count = sum(
+            1
+            for d in self.round_dir.iterdir()
+            if d.is_dir() and (d / ".complete").exists()
+        )
+        return complete_count >= n_datasets
 
     def get_tasks(self) -> list[SyntheticTask]:
         """Return list of tasks for benchmarking."""
         if self._tasks is None:
-            self._tasks = load_tasks_from_cache(self.round_dir)
+            scenario_ids = self._get_expected_scenario_ids()
+            self._tasks = load_tasks_from_cache(self.round_dir, scenario_ids=scenario_ids)
         return self._tasks
 
     def get_task(self, name: str) -> SyntheticTask:
@@ -112,6 +124,24 @@ class SyntheticTabContext:
     def get_tabarena_tasks(self, cache_path: Path | None = None):
         """Convert all tasks to TabArena UserTask objects.
 
-        Requires TabArena to be installed (pip install synthetic-tab[benchmark]).
+        Requires TabArena to be installed (pip install tabular-bank[benchmark]).
         """
         return [t.to_tabarena_task(cache_path=cache_path) for t in self.get_tasks()]
+
+    def _get_expected_scenario_ids(self) -> list[str] | None:
+        """Return the authoritative scenario ordering for the round, if known."""
+        meta_file = self.round_dir / "round_metadata.json"
+        if not meta_file.exists():
+            return None
+        try:
+            with open(meta_file) as f:
+                meta = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+        scenario_ids = meta.get("scenario_ids")
+        if scenario_ids:
+            return list(scenario_ids)
+        n_datasets = int(meta.get("n_datasets", 0))
+        if n_datasets > 0:
+            return [f"sampled_{i}" for i in range(n_datasets)]
+        return None

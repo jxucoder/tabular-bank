@@ -6,14 +6,14 @@ Run:
 
 from sklearn.ensemble import GradientBoostingClassifier
 
-from synthetic_tab.context import SyntheticTabContext
-from synthetic_tab.runner import evaluate_model
+from tabular_bank.context import TabularBankContext
+from tabular_bank.runner import evaluate_model
 
 # Setup
-ctx = SyntheticTabContext(
+ctx = TabularBankContext(
     round_id="round-001",
     master_secret="demo-secret-do-not-use-in-production",
-    cache_dir="/tmp/synthetic_tab_demo",
+    cache_dir="/tmp/tabular_bank_demo",
 )
 
 # Pick the first task

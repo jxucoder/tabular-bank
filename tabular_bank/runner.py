@@ -21,8 +21,8 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from synthetic_tab.context import SyntheticTabContext
-from synthetic_tab.tasks import SyntheticTask
+from tabular_bank.context import TabularBankContext
+from tabular_bank.tasks import SyntheticTask
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ def run_benchmark(
     Returns:
         BenchmarkResult with all results.
     """
-    ctx = SyntheticTabContext(
+    ctx = TabularBankContext(
         round_id=round_id,
         master_secret=master_secret,
         cache_dir=cache_dir,
@@ -233,7 +233,7 @@ def run_benchmark_tabarena(
 ):
     """Run benchmark using TabArena's full pipeline.
 
-    Requires TabArena to be installed (pip install synthetic-tab[benchmark]).
+    Requires TabArena to be installed (pip install tabular-bank[benchmark]).
     Uses TabArena's AGModelBagExperiment, ExperimentBatchRunner, etc.
     """
     try:
@@ -241,10 +241,10 @@ def run_benchmark_tabarena(
     except ImportError:
         raise ImportError(
             "TabArena is required for this operation. "
-            "Install with: pip install synthetic-tab[benchmark]"
+            "Install with: pip install tabular-bank[benchmark]"
         )
 
-    ctx = SyntheticTabContext(
+    ctx = TabularBankContext(
         round_id=round_id,
         master_secret=master_secret,
         cache_dir=cache_dir,
@@ -306,19 +306,30 @@ def _encode_features(
     X_train: pd.DataFrame,
     X_test: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Simple categorical encoding for sklearn models."""
-    cat_cols = X_train.select_dtypes(include=["object", "category"]).columns.tolist()
-    if not cat_cols:
-        return X_train, X_test
+    """Simple categorical encoding for sklearn models.
 
+    Encodes categoricals with train-set label maps and imputes numeric NaN
+    values with the train median so pure-numeric datasets with missingness
+    remain compatible with basic sklearn estimators.
+    """
     X_train = X_train.copy()
     X_test = X_test.copy()
 
+    cat_cols = X_train.select_dtypes(include=["object", "category"]).columns.tolist()
     for col in cat_cols:
-        # Label encode
-        categories = sorted(X_train[col].unique())
+        categories = sorted(X_train[col].dropna().unique())
         cat_map = {c: i for i, c in enumerate(categories)}
         X_train[col] = X_train[col].map(cat_map).fillna(-1).astype(int)
         X_test[col] = X_test[col].map(cat_map).fillna(-1).astype(int)
+
+    # Fill remaining NaN in numeric columns with the train-set median.
+    numeric_cols = X_train.select_dtypes(include=["number"]).columns
+    for col in numeric_cols:
+        if X_train[col].isna().any() or X_test[col].isna().any():
+            fill_val = X_train[col].median()
+            if pd.isna(fill_val):
+                fill_val = 0.0
+            X_train[col] = X_train[col].fillna(fill_val)
+            X_test[col] = X_test[col].fillna(fill_val)
 
     return X_train, X_test

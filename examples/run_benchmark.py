@@ -11,17 +11,17 @@ from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegress
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
 
-from synthetic_tab.context import SyntheticTabContext
-from synthetic_tab.leaderboard import format_leaderboard, generate_leaderboard
-from synthetic_tab.runner import BenchmarkResult, evaluate_model
+from tabular_bank.context import TabularBankContext
+from tabular_bank.leaderboard import format_leaderboard, generate_leaderboard
+from tabular_bank.runner import BenchmarkResult, evaluate_model
 
 # Setup
 SECRET = "demo-secret-do-not-use-in-production"
 ROUND = "round-001"
-CACHE = "/tmp/synthetic_tab_demo"
+CACHE = "/tmp/tabular_bank_demo"
 
 # Load context (generates datasets if needed)
-ctx = SyntheticTabContext(
+ctx = TabularBankContext(
     round_id=ROUND,
     master_secret=SECRET,
     cache_dir=CACHE,

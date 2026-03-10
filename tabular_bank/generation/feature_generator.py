@@ -8,8 +8,6 @@ infinite and unpredictable without the seed.
 
 from __future__ import annotations
 
-import hashlib
-
 import numpy as np
 
 
@@ -101,7 +99,7 @@ def generate_features(
     features = [features[i] for i in perm]
 
     # Generate target name
-    target_name = _generate_unique_name(rng, used_names)
+    target_name = "target"
 
     if template["problem_type"] == "regression":
         target = {
@@ -145,43 +143,27 @@ def _generate_unique_name(
     rng: np.random.Generator,
     used_names: set[str],
 ) -> str:
-    """Generate a unique, opaque feature name."""
-    for _ in range(200):
-        pattern = _NAME_PATTERNS[int(rng.integers(0, len(_NAME_PATTERNS)))]
-        root = _generate_root(rng)
+    """Generate a unique opaque feature name from phonetic building blocks."""
+    while True:
+        candidate = _format_name_candidate(rng)
+        if candidate != "target" and candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
 
-        if "{prefix}" in pattern:
-            prefix = _PREFIX_TOKENS[int(rng.integers(0, len(_PREFIX_TOKENS)))]
-        else:
-            prefix = ""
 
-        if "{suffix}" in pattern:
-            suffix = _SUFFIX_TOKENS[int(rng.integers(0, len(_SUFFIX_TOKENS)))]
-        else:
-            suffix = ""
-
-        name = pattern.format(root=root, prefix=prefix, suffix=suffix)
-
-        if name not in used_names:
-            used_names.add(name)
-            return name
-
-    # Extremely unlikely fallback
-    i = 0
-    while f"feat_{i}" in used_names:
-        i += 1
-    name = f"feat_{i}"
-    used_names.add(name)
-    return name
+def _format_name_candidate(rng: np.random.Generator) -> str:
+    """Assemble a pronounceable-but-opaque identifier."""
+    pattern = _NAME_PATTERNS[int(rng.integers(0, len(_NAME_PATTERNS)))]
+    return pattern.format(
+        root=_generate_root(rng),
+        prefix=_PREFIX_TOKENS[int(rng.integers(0, len(_PREFIX_TOKENS)))],
+        suffix=_SUFFIX_TOKENS[int(rng.integers(0, len(_SUFFIX_TOKENS)))],
+    )
 
 
 def _generate_category_label(rng: np.random.Generator, index: int) -> str:
-    """Generate an opaque category label.
-
-    Uses a short syllable + index to create labels like "brel_0", "skoa_1".
-    """
-    syllable = _generate_syllable(rng)
-    return f"{syllable}_{index}"
+    """Generate a simple category label like cat_0, cat_1."""
+    return f"cat_{index}"
 
 
 def _sample_distribution_params(rng: np.random.Generator, dist: str) -> dict:

@@ -1,11 +1,11 @@
-"""CLI entry point for synthetic-tab.
+"""CLI entry point for tabular-bank.
 
 Usage:
-    synthetic-tab generate --round round-001
-    synthetic-tab generate --round round-001 --secret "my-secret"
-    synthetic-tab generate --round round-001 --cache-dir /data/benchmark
-    synthetic-tab generate --round round-001 --force
-    synthetic-tab info --round round-001
+    tabular-bank generate --round round-001
+    tabular-bank generate --round round-001 --secret "my-secret"
+    tabular-bank generate --round round-001 --cache-dir /data/benchmark
+    tabular-bank generate --round round-001 --force
+    tabular-bank info --round round-001
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ import argparse
 import logging
 import sys
 
-from synthetic_tab.generation.seed import get_default_cache_dir
+from tabular_bank.generation.seed import get_default_cache_dir
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="synthetic-tab",
+        prog="tabular-bank",
         description="Contamination-proof tabular ML benchmark",
     )
     parser.add_argument(
@@ -33,10 +33,20 @@ def main(argv: list[str] | None = None) -> None:
     # Generate command
     gen_parser = subparsers.add_parser("generate", help="Generate benchmark datasets")
     gen_parser.add_argument("--round", default="round-001", help="Benchmark round ID")
-    gen_parser.add_argument("--secret", default=None, help="Master secret (or set SYNTHETIC_TAB_SECRET)")
+    gen_parser.add_argument(
+        "--secret",
+        default=None,
+        help="Master secret (or set TABULAR_BANK_SECRET)",
+    )
     gen_parser.add_argument("--cache-dir", default=None, help="Cache directory for generated data")
     gen_parser.add_argument("--force", action="store_true", help="Force regeneration of existing datasets")
     gen_parser.add_argument("--scenario", type=int, default=None, help="Generate only this scenario index")
+    gen_parser.add_argument(
+        "--n-scenarios",
+        type=int,
+        default=10,
+        help="Number of sampled scenarios to generate for the round",
+    )
 
     # Info command
     info_parser = subparsers.add_parser("info", help="Show information about generated datasets")
@@ -60,7 +70,12 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _cmd_generate(args) -> None:
-    from synthetic_tab.generation.generate import generate_all, generate_one
+    from tabular_bank.generation.generate import generate_all, generate_one
+
+    if args.scenario is not None and args.scenario < 0:
+        raise SystemExit("--scenario must be non-negative")
+    if args.n_scenarios <= 0:
+        raise SystemExit("--n-scenarios must be positive")
 
     if args.scenario is not None:
         path = generate_one(
@@ -75,6 +90,7 @@ def _cmd_generate(args) -> None:
         paths = generate_all(
             master_secret=args.secret,
             round_id=args.round,
+            n_scenarios=args.n_scenarios,
             cache_dir=args.cache_dir,
             force=args.force,
         )
@@ -92,7 +108,7 @@ def _cmd_info(args) -> None:
 
     if not round_dir.exists():
         print(f"No datasets found for round '{args.round}' in {cache_dir}")
-        print("Run 'synthetic-tab generate' first.")
+        print("Run 'tabular-bank generate' first.")
         sys.exit(1)
 
     meta_file = round_dir / "round_metadata.json"

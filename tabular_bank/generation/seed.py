@@ -54,17 +54,19 @@ def get_master_secret(
 
     Priority order:
     1. Explicit `secret` parameter
-    2. SYNTHETIC_TAB_SECRET environment variable
-    3. .secret file in cache_dir
+    2. TABULAR_BANK_SECRET environment variable
+    3. SYNTHETIC_TAB_SECRET environment variable (legacy alias)
+    4. .secret file in cache_dir
 
     Raises ValueError if no secret can be found.
     """
     if secret is not None:
         return secret
 
-    env_secret = os.environ.get("SYNTHETIC_TAB_SECRET")
-    if env_secret is not None:
-        return env_secret
+    for env_var in ("TABULAR_BANK_SECRET", "SYNTHETIC_TAB_SECRET"):
+        env_secret = os.environ.get(env_var)
+        if env_secret is not None:
+            return env_secret
 
     if cache_dir is not None:
         secret_file = Path(cache_dir) / ".secret"
@@ -72,14 +74,14 @@ def get_master_secret(
             return secret_file.read_text().strip()
 
     raise ValueError(
-        "No master secret provided. Set SYNTHETIC_TAB_SECRET env var, "
+        "No master secret provided. Set TABULAR_BANK_SECRET env var, "
         "pass --secret on the CLI, or create a .secret file in the cache directory."
     )
 
 
 def get_default_cache_dir() -> Path:
     """Return the default cache directory."""
-    cache_dir = os.environ.get("SYNTHETIC_TAB_CACHE")
+    cache_dir = os.environ.get("TABULAR_BANK_CACHE") or os.environ.get("SYNTHETIC_TAB_CACHE")
     if cache_dir:
         return Path(cache_dir)
-    return Path.home() / ".cache" / "synthetic_tab"
+    return Path.home() / ".cache" / "tabular_bank"

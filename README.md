@@ -1,10 +1,10 @@
-# synthetic-tab
+# tabular-bank
 
 A contamination-proof tabular ML benchmark — drop-in replacement for [TabArena](https://github.com/autogluon/tabarena) with procedurally generated synthetic datasets.
 
-## Why synthetic-tab?
+## Why tabular-bank?
 
-TabArena is the leading benchmark for tabular ML models, but it uses real-world datasets that may be contaminated in LLM/foundation model training data. `synthetic-tab` solves this by generating datasets **procedurally from a secret seed** — the repo contains only the generation engine and minimal scenario templates. No dataset-specific information is ever committed.
+TabArena is the leading benchmark for tabular ML models, but it uses real-world datasets that may be contaminated in LLM/foundation model training data. `tabular-bank` solves this by generating datasets **procedurally from a secret seed** — the repo contains only the generation engine. No dataset-specific information is ever committed.
 
 ### Anti-Contamination Architecture
 
@@ -16,10 +16,10 @@ TabArena is the leading benchmark for tabular ML models, but it uses real-world 
 ## Installation
 
 ```bash
-pip install synthetic-tab
+pip install tabular-bank
 
 # With TabArena integration for official benchmarking
-pip install "synthetic-tab[benchmark]"
+pip install "tabular-bank[benchmark]"
 ```
 
 ## Quick Start
@@ -28,20 +28,20 @@ pip install "synthetic-tab[benchmark]"
 
 ```bash
 # Via CLI
-synthetic-tab generate --round round-001 --secret "your-secret"
+tabular-bank generate --round round-001 --secret "your-secret" --n-scenarios 10
 
 # Via Python
-from synthetic_tab.generation.generate import generate_all
-generate_all(master_secret="your-secret", round_id="round-001")
+from tabular_bank.generation.generate import generate_all
+generate_all(master_secret="your-secret", round_id="round-001", n_scenarios=10)
 ```
 
 ### Run a Benchmark
 
 ```python
-from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
-from synthetic_tab.context import SyntheticTabContext
-from synthetic_tab.runner import run_benchmark
-from synthetic_tab.leaderboard import generate_leaderboard, format_leaderboard
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from tabular_bank.context import TabularBankContext
+from tabular_bank.runner import run_benchmark
+from tabular_bank.leaderboard import generate_leaderboard, format_leaderboard
 
 # Models to benchmark
 models = {
@@ -64,41 +64,69 @@ print(format_leaderboard(leaderboard))
 ### Inspect Datasets
 
 ```bash
-synthetic-tab info --round round-001
+tabular-bank info --round round-001
 ```
+
+You can also set `TABULAR_BANK_SECRET` and `TABULAR_BANK_CACHE` in the environment.
+Legacy `SYNTHETIC_TAB_SECRET` / `SYNTHETIC_TAB_CACHE` names are still accepted.
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    A["Secret + Round ID"] --> B["HMAC-SHA256"]
+    B --> C["Round Seed"]
+    C --> D["Scenario Sampler"]
+    D --> E["Scenario Config\n(problem type, features, difficulty,\nmissing values, imbalance, etc.)"]
+
+    E --> FS["Feature Seed"]
+    E --> DS["DAG Seed"]
+    E --> AS["Data Seed"]
+    E --> SS["Split Seed"]
+
+    FS --> FG["Feature Generator"]
+    FG --> FO["Names · Types · Distributions"]
+
+    DS --> DB["DAG Builder"]
+    DB --> DO["Causal Graph · Functional Forms"]
+
+    AS --> SM["Sampler"]
+    SM --> SO["Tabular DataFrame"]
+
+    SS --> SG["Split Generator"]
+    SG --> SGO["Cross-Validation Folds\n(10 repeats × 3 folds)"]
 ```
-Secret + Round ID
-       │
-       ▼
-  HMAC-SHA256  ──► Round Seed
-       │
-       ├──► Feature Seed ──► Feature Generator ──► Names, Types, Distributions
-       ├──► DAG Seed     ──► DAG Builder       ──► Causal Graph, Functional Forms
-       ├──► Data Seed    ──► Sampler            ──► Tabular Data (DataFrame)
-       └──► Split Seed   ──► Split Generator    ──► Cross-Validation Folds
+
+## Parametric Scenario Sampling
+
+Rather than fixed hand-crafted templates, `tabular-bank` samples all scenario parameters from a continuous space (CausalProfiler-inspired coverage guarantee). Any valid configuration has non-zero probability of being generated, producing diverse, non-redundant benchmark tasks.
+
+**Sampled axes include:**
+- Problem type: binary classification, multiclass, regression
+- Feature count, sample size, categorical ratio
+- Difficulty: noise scale, nonlinearity probability, interaction probability, DAG edge density
+- DAG complexity: confounder count and strength, max parent count
+- Missing values: rate and mechanism (MCAR / MAR / MNAR)
+- Class imbalance ratio (binary tasks)
+- Temporal autocorrelation in root features
+- Root feature correlations (multivariate Gaussian)
+
+```python
+from tabular_bank.generation.engine import generate_sampled_datasets
+
+datasets = generate_sampled_datasets(
+    master_secret="your-secret",
+    round_id="round-001",
+    n_scenarios=20,
+)
 ```
-
-## Scenario Templates
-
-The repo ships 5 minimal scenario templates (no dataset-specific information):
-
-| # | Domain | Problem Type | Features | Difficulty |
-|---|--------|-------------|----------|-----------|
-| 1 | Commercial | Binary | 8-15 | Medium |
-| 2 | Healthcare | Multiclass (4) | 10-18 | Hard |
-| 3 | Real Estate | Regression | 10-16 | Medium |
-| 4 | Financial | Binary | 7-13 | Easy |
-| 5 | HR | Binary | 8-14 | Hard |
 
 ## TabArena Compatibility
 
-`synthetic-tab` is designed as a drop-in replacement for TabArena. Generated datasets can be converted to TabArena's `UserTask` format for use with TabArena's full evaluation pipeline (8-fold bagging, standardized HPO, ELO leaderboards).
+`tabular-bank` is designed as a drop-in replacement for TabArena. Generated datasets can be converted to TabArena's `UserTask` format for use with TabArena's full evaluation pipeline (8-fold bagging, standardized HPO, ELO leaderboards).
 
 ```python
-ctx = SyntheticTabContext(round_id="round-001", master_secret="your-secret")
+ctx = TabularBankContext(round_id="round-001", master_secret="your-secret")
 tabarena_tasks = ctx.get_tabarena_tasks()  # Requires tabarena package
 ```
 

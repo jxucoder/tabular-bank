@@ -7,6 +7,7 @@ When TabArena is not installed, provides a standalone task representation.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,12 +67,12 @@ class SyntheticTask:
         except ImportError:
             raise ImportError(
                 "TabArena is required for this operation. "
-                "Install with: pip install synthetic-tab[benchmark]"
+                "Install with: pip install tabular-bank[benchmark]"
             )
 
         if cache_path is None:
             import tempfile
-            cache_path = Path(tempfile.mkdtemp()) / "synthetic_tab_tasks"
+            cache_path = Path(tempfile.mkdtemp()) / "tabular_bank_tasks"
 
         # Convert splits to TabArena format: repeat -> fold -> (train_idx, test_idx)
         tabarena_splits = {}
@@ -93,20 +94,34 @@ class SyntheticTask:
 
 def load_tasks_from_cache(
     round_dir: Path,
+    scenario_ids: list[str] | None = None,
 ) -> list[SyntheticTask]:
     """Load all tasks from a round's cache directory."""
-    tasks = []
-    for ds_dir in sorted(round_dir.iterdir()):
-        if not ds_dir.is_dir():
-            continue
-        meta_path = ds_dir / "metadata.json"
-        if not meta_path.exists():
-            continue
+    if not round_dir.exists():
+        return []
 
-        task = _load_single_task(ds_dir)
-        tasks.append(task)
+    tasks = []
+    if scenario_ids is not None:
+        for scenario_id in scenario_ids:
+            ds_dir = round_dir / scenario_id
+            meta_path = ds_dir / "metadata.json"
+            if ds_dir.is_dir() and meta_path.exists():
+                tasks.append(_load_single_task(ds_dir))
+        return tasks
+
+    for ds_dir in sorted(round_dir.iterdir(), key=lambda path: _dataset_sort_key(path.name)):
+        if ds_dir.is_dir() and (ds_dir / "metadata.json").exists():
+            tasks.append(_load_single_task(ds_dir))
 
     return tasks
+
+
+def _dataset_sort_key(name: str) -> tuple[str, int, str]:
+    """Sort sampled dataset directories numerically when possible."""
+    match = re.match(r"^(.*)_(\d+)$", name)
+    if match:
+        return (match.group(1), int(match.group(2)), name)
+    return (name, -1, name)
 
 
 def _load_single_task(ds_dir: Path) -> SyntheticTask:
