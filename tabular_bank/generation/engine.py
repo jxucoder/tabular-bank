@@ -13,17 +13,18 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import RepeatedKFold, RepeatedStratifiedKFold
 
-from synthetic_tab.generation.dag_builder import DAGSpec, build_dag
-from synthetic_tab.generation.feature_generator import generate_features
-from synthetic_tab.generation.sampler import sample_dataset
-from synthetic_tab.generation.seed import (
+from tabular_bank.generation.dag_builder import DAGSpec, build_dag
+from tabular_bank.generation.feature_generator import generate_features
+from tabular_bank.generation.missing import inject_missing
+from tabular_bank.generation.sampler import sample_dataset
+from tabular_bank.generation.seed import (
     derive_dag_seed,
     derive_dataset_seed,
     derive_feature_seed,
     derive_round_seed,
     derive_split_seed,
 )
-from synthetic_tab.templates.scenarios import SCENARIOS, get_scenario
+from tabular_bank.templates.scenarios import sample_scenario
 
 
 @dataclass
@@ -55,6 +56,7 @@ def generate_single_dataset(
     master_secret: str,
     round_id: str,
     scenario_index: int,
+    template_override: dict | None = None,
 ) -> GeneratedDataset:
     """Generate a single dataset from a scenario template + seeds.
 
@@ -64,8 +66,16 @@ def generate_single_dataset(
     3. Builds a random DAG
     4. Samples data from the DAG
     5. Creates cross-validation splits
+
+    Args:
+        template_override: If provided, use this template dict instead of
+            looking up by ``scenario_index``.  Enables parametric sampling.
     """
-    template = get_scenario(scenario_index)
+    if template_override is None:
+        raise ValueError(
+            "template_override is required. Use generate_sampled_datasets() or pass a template dict."
+        )
+    template = template_override
     round_seed = derive_round_seed(master_secret, round_id)
 
     # Derive independent seeds for each generation step
@@ -88,22 +98,35 @@ def generate_single_dataset(
         template["n_samples_range"][0],
         template["n_samples_range"][1] + 1,
     ))
-    df = sample_dataset(data_rng, dag, features, target, n_samples)
+    df = sample_dataset(data_rng, dag, features, target, n_samples, template=template)
 
-    # Step 4: Create splits (10 repeats x 3 folds = 30 splits)
+    # Step 4: Inject missing values (if configured)
+    missing_rate = template.get("missing_rate", 0.0)
+    if missing_rate > 0:
+        missing_mechanism = template.get("missing_mechanism", "MCAR")
+        df = inject_missing(data_rng, df, target["name"], missing_rate, missing_mechanism)
+
+    # Step 5: Create splits (10 repeats x 3 folds = 30 splits)
     splits = _create_splits(df, target, split_seed)
 
     # Build metadata
     dataset_id = f"{round_id}_{template['id']}"
+    total_features = len(df.columns) - 1
+    informative_features = len(features)
+    noise_features = total_features - informative_features
+    informative_continuous = sum(1 for f in features if f["type"] == "continuous")
+    informative_categorical = sum(1 for f in features if f["type"] == "categorical")
     metadata = {
         "dataset_id": dataset_id,
         "scenario_id": template["id"],
         "round_id": round_id,
         "problem_type": template["problem_type"],
         "n_samples": n_samples,
-        "n_features": len(features),
-        "n_continuous": sum(1 for f in features if f["type"] == "continuous"),
-        "n_categorical": sum(1 for f in features if f["type"] == "categorical"),
+        "n_features": total_features,
+        "n_informative_features": informative_features,
+        "n_noise_features": noise_features,
+        "n_continuous": informative_continuous + noise_features,
+        "n_categorical": informative_categorical,
         "target_name": target["name"],
         "domain": template["domain"],
         "difficulty": template["difficulty"],
@@ -122,14 +145,25 @@ def generate_single_dataset(
     )
 
 
-def generate_all_datasets(
+def generate_sampled_datasets(
     master_secret: str,
     round_id: str = "round-001",
+    n_scenarios: int = 10,
 ) -> list[GeneratedDataset]:
-    """Generate all benchmark datasets for a round."""
+    """Generate benchmark datasets by sampling from the scenario space.
+
+    Instead of using the fixed 5 templates, draws ``n_scenarios`` random
+    configurations from the continuous parameter space (CausalProfiler-style
+    coverage guarantee).
+    """
+    round_seed = derive_round_seed(master_secret, round_id)
+    # round_seed is 32 bytes; convert to int for numpy RNG
+    scenario_rng = np.random.default_rng(int.from_bytes(round_seed[:8], "big"))
+
     datasets = []
-    for i in range(len(SCENARIOS)):
-        ds = generate_single_dataset(master_secret, round_id, i)
+    for i in range(n_scenarios):
+        tmpl = sample_scenario(scenario_rng, scenario_id=f"sampled_{i}")
+        ds = generate_single_dataset(master_secret, round_id, i, template_override=tmpl)
         datasets.append(ds)
     return datasets
 

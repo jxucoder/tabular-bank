@@ -3,53 +3,67 @@
 import numpy as np
 import pandas as pd
 
-from synthetic_tab.generation.engine import generate_all_datasets, generate_single_dataset
-from synthetic_tab.templates.scenarios import SCENARIOS
-
+from tabular_bank.generation.engine import generate_sampled_datasets, generate_single_dataset
+from tabular_bank.templates.scenarios import sample_scenario
 
 SECRET = "test-secret-for-unit-tests"
 ROUND = "test-round"
+N_SCENARIOS = 3  # small number for fast tests
+
+
+def _make_rng():
+    return np.random.default_rng(42)
 
 
 def test_generate_single_dataset():
     """Generate a single dataset and verify basic properties."""
-    ds = generate_single_dataset(SECRET, ROUND, 0)
+    tmpl = sample_scenario(_make_rng(), scenario_id="test_0")
+    ds = generate_single_dataset(SECRET, ROUND, 0, template_override=tmpl)
 
     assert isinstance(ds.data, pd.DataFrame)
     assert ds.n_samples > 0
     assert ds.n_features > 0
     assert ds.target_name in ds.data.columns
     assert ds.problem_type in ("binary", "multiclass", "regression")
+    assert ds.metadata["n_features"] == ds.n_features
 
 
-def test_generate_all_datasets():
-    """Generate all datasets and verify count matches scenarios."""
-    datasets = generate_all_datasets(SECRET, ROUND)
-    assert len(datasets) == len(SCENARIOS)
+def test_generate_sampled_datasets():
+    """Generate sampled datasets and verify count."""
+    datasets = generate_sampled_datasets(SECRET, ROUND, n_scenarios=N_SCENARIOS)
+    assert len(datasets) == N_SCENARIOS
 
 
 def test_dataset_has_correct_problem_type():
-    """Each dataset's problem type matches its scenario template."""
-    for i, scenario in enumerate(SCENARIOS):
-        ds = generate_single_dataset(SECRET, ROUND, i)
-        assert ds.problem_type == scenario["problem_type"]
+    """Each dataset's problem type matches its sampled template."""
+    rng = _make_rng()
+    for i in range(N_SCENARIOS):
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+        assert ds.problem_type == tmpl["problem_type"]
 
 
 def test_dataset_features_in_range():
-    """Feature count falls within the scenario's range."""
-    for i, scenario in enumerate(SCENARIOS):
-        ds = generate_single_dataset(SECRET, ROUND, i)
-        lo, hi = scenario["n_features_range"]
-        assert lo <= ds.n_features <= hi, (
-            f"Scenario {i}: {ds.n_features} features not in [{lo}, {hi}]"
+    """Informative feature count falls within the scenario's range."""
+    rng = _make_rng()
+    for i in range(N_SCENARIOS):
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+        lo, hi = tmpl["n_features_range"]
+        n_informative = ds.metadata["n_informative_features"]
+        assert lo <= n_informative <= hi, (
+            f"Scenario {i}: {n_informative} informative features not in [{lo}, {hi}]"
         )
+        assert ds.metadata["n_features"] >= n_informative
 
 
 def test_dataset_samples_in_range():
     """Sample count falls within the scenario's range."""
-    for i, scenario in enumerate(SCENARIOS):
-        ds = generate_single_dataset(SECRET, ROUND, i)
-        lo, hi = scenario["n_samples_range"]
+    rng = _make_rng()
+    for i in range(N_SCENARIOS):
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+        lo, hi = tmpl["n_samples_range"]
         assert lo <= ds.n_samples <= hi, (
             f"Scenario {i}: {ds.n_samples} samples not in [{lo}, {hi}]"
         )
@@ -57,57 +71,74 @@ def test_dataset_samples_in_range():
 
 def test_splits_structure():
     """Verify split structure: 10 repeats x 3 folds."""
-    ds = generate_single_dataset(SECRET, ROUND, 0)
+    tmpl = sample_scenario(_make_rng(), scenario_id="test_0")
+    ds = generate_single_dataset(SECRET, ROUND, 0, template_override=tmpl)
 
-    assert len(ds.splits) == 10  # 10 repeats
+    assert len(ds.splits) == 10
     for repeat_idx, folds in ds.splits.items():
-        assert len(folds) == 3  # 3 folds
+        assert len(folds) == 3
         for fold_idx, (train, test) in folds.items():
             assert isinstance(train, np.ndarray)
             assert isinstance(test, np.ndarray)
-            # Train + test should cover all indices
             all_indices = set(train.tolist()) | set(test.tolist())
             assert all_indices == set(range(ds.n_samples))
-            # No overlap
             assert len(set(train.tolist()) & set(test.tolist())) == 0
 
 
 def test_binary_target_values():
     """Binary classification targets should be 0 or 1."""
-    # Scenario 0 is binary
-    ds = generate_single_dataset(SECRET, ROUND, 0)
-    assert ds.problem_type == "binary"
-    unique_vals = set(ds.data[ds.target_name].unique())
-    assert unique_vals.issubset({0, 1})
+    rng = _make_rng()
+    for i in range(20):  # sample until we find a binary scenario
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        if tmpl["problem_type"] == "binary":
+            ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+            unique_vals = set(ds.data[ds.target_name].unique())
+            assert unique_vals.issubset({0, 1})
+            return
+    raise AssertionError("No binary scenario found in 20 samples")
 
 
 def test_multiclass_target_values():
     """Multiclass targets should have the right number of classes."""
-    # Scenario 1 is multiclass with 4 classes
-    ds = generate_single_dataset(SECRET, ROUND, 1)
-    assert ds.problem_type == "multiclass"
-    unique_vals = ds.data[ds.target_name].unique()
-    assert len(unique_vals) <= SCENARIOS[1]["n_classes"]
+    rng = _make_rng()
+    for i in range(20):
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        if tmpl["problem_type"] == "multiclass":
+            ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+            unique_vals = ds.data[ds.target_name].unique()
+            assert len(unique_vals) <= tmpl["n_classes"]
+            return
+    raise AssertionError("No multiclass scenario found in 20 samples")
 
 
 def test_regression_target_is_continuous():
     """Regression targets should be continuous (float)."""
-    # Scenario 2 is regression
-    ds = generate_single_dataset(SECRET, ROUND, 2)
-    assert ds.problem_type == "regression"
-    assert ds.data[ds.target_name].dtype in [np.float64, np.float32]
+    rng = _make_rng()
+    for i in range(20):
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        if tmpl["problem_type"] == "regression":
+            ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+            assert ds.data[ds.target_name].dtype in [np.float64, np.float32]
+            return
+    raise AssertionError("No regression scenario found in 20 samples")
 
 
-def test_no_nan_in_features():
-    """Generated data should not contain NaN values."""
-    ds = generate_single_dataset(SECRET, ROUND, 0)
-    assert not ds.data.isna().any().any(), "Found NaN values in generated data"
+def test_no_nan_in_target():
+    """Target column should never contain NaN."""
+    rng = _make_rng()
+    for i in range(N_SCENARIOS):
+        tmpl = sample_scenario(rng, scenario_id=f"test_{i}")
+        ds = generate_single_dataset(SECRET, ROUND, i, template_override=tmpl)
+        assert not ds.data[ds.target_name].isna().any(), (
+            f"Scenario {i}: Found NaN in target column"
+        )
 
 
 def test_reproducibility():
     """Same inputs produce identical datasets."""
-    ds1 = generate_single_dataset(SECRET, ROUND, 0)
-    ds2 = generate_single_dataset(SECRET, ROUND, 0)
+    tmpl = sample_scenario(_make_rng(), scenario_id="repro_test")
+    ds1 = generate_single_dataset(SECRET, ROUND, 0, template_override=tmpl)
+    ds2 = generate_single_dataset(SECRET, ROUND, 0, template_override=tmpl)
 
     assert ds1.target_name == ds2.target_name
     assert ds1.n_samples == ds2.n_samples

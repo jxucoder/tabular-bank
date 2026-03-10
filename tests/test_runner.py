@@ -1,10 +1,13 @@
 """Tests for the benchmark runner."""
 
+import tempfile
+
 import numpy as np
+import pandas as pd
 import pytest
 from sklearn.dummy import DummyClassifier, DummyRegressor
 
-from synthetic_tab.runner import _evaluate_metric, _is_compatible, run_benchmark
+from tabular_bank.runner import _encode_features, _evaluate_metric, _is_compatible, run_benchmark
 
 
 def test_classifier_compatible_with_binary():
@@ -42,11 +45,13 @@ def test_untyped_model_compatible_with_all():
 def test_run_benchmark_skips_incompatible_tasks():
     """Classifiers should only run on classification tasks, not crash."""
     models = {"dummy_clf": DummyClassifier(strategy="most_frequent")}
-    result = run_benchmark(
-        models=models,
-        round_id="test-round",
-        master_secret="test-secret-runner",
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = run_benchmark(
+            models=models,
+            round_id="test-round",
+            master_secret="test-secret-runner",
+            cache_dir=tmpdir,
+        )
     # All results should be from classification tasks only
     for r in result.results:
         assert r.metric_name in ("roc_auc", "log_loss"), (
@@ -58,7 +63,6 @@ def test_run_benchmark_skips_incompatible_tasks():
 
 def test_log_loss_fallback_without_predict_proba():
     """Models without predict_proba should not crash on log_loss tasks."""
-    import pandas as pd
     from sklearn.tree import DecisionTreeClassifier
 
     # Build a tiny multiclass dataset
@@ -82,3 +86,29 @@ def test_log_loss_fallback_without_predict_proba():
     score = _evaluate_metric(model, X_test, y_test, "multiclass", "log_loss")
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0  # accuracy is in [0, 1]
+
+
+def test_encode_features_imputes_numeric_only_missing_values():
+    """Numeric-only datasets should still have NaN imputed."""
+    X_train = pd.DataFrame({"a": [1.0, np.nan, 3.0], "b": [10.0, 11.0, 12.0]})
+    X_test = pd.DataFrame({"a": [np.nan], "b": [13.0]})
+
+    train_enc, test_enc = _encode_features(X_train, X_test)
+
+    assert not train_enc.isna().any().any()
+    assert not test_enc.isna().any().any()
+    assert train_enc.loc[1, "a"] == pytest.approx(2.0)
+    assert test_enc.loc[0, "a"] == pytest.approx(2.0)
+
+
+def test_encode_features_imputes_test_only_missing_values():
+    """Test-set numeric NaN should be filled even when train has no missing values."""
+    X_train = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["x", "y", "x"]})
+    X_test = pd.DataFrame({"a": [np.nan], "b": [None]})
+
+    train_enc, test_enc = _encode_features(X_train, X_test)
+
+    assert not train_enc.isna().any().any()
+    assert not test_enc.isna().any().any()
+    assert test_enc.loc[0, "a"] == pytest.approx(2.0)
+    assert test_enc.loc[0, "b"] == -1

@@ -5,71 +5,76 @@ different datasets — different features, different DAG structures,
 different data values.
 """
 
-from synthetic_tab.generation.engine import generate_single_dataset
+import numpy as np
+
+from tabular_bank.generation.engine import generate_single_dataset
+from tabular_bank.templates.scenarios import sample_scenario
 
 
-def test_different_secrets_different_features():
-    """Different secrets produce different feature sets."""
-    ds1 = generate_single_dataset("secret-alpha", "round-001", 0)
-    ds2 = generate_single_dataset("secret-beta", "round-001", 0)
+def _tmpl(seed=42, scenario_id="test"):
+    return sample_scenario(np.random.default_rng(seed), scenario_id=scenario_id)
 
-    cols1 = set(ds1.data.columns)
-    cols2 = set(ds2.data.columns)
-    # Feature names should be mostly different
-    overlap = cols1 & cols2
-    # At most 1 column can overlap (target might happen to get same name)
-    # but feature columns should be different
-    feature_overlap = overlap - {ds1.target_name, ds2.target_name}
-    assert len(feature_overlap) < len(cols1) * 0.5, (
-        f"Too much feature overlap between secrets: {feature_overlap}"
+
+def test_different_secrets_different_data():
+    """Different secrets should also change informative feature identities."""
+    tmpl = _tmpl()
+    ds1 = generate_single_dataset("secret-alpha", "round-001", 0, template_override=tmpl)
+    ds2 = generate_single_dataset("secret-beta", "round-001", 0, template_override=tmpl)
+
+    informative_1 = set(ds1.feature_names[:ds1.metadata["n_informative_features"]])
+    informative_2 = set(ds2.feature_names[:ds2.metadata["n_informative_features"]])
+    feature_overlap = informative_1 & informative_2
+
+    assert len(feature_overlap) < max(1, min(len(informative_1), len(informative_2)) // 2), (
+        f"Too much informative feature overlap between secrets: {feature_overlap}"
     )
 
 
-def test_different_rounds_different_features():
-    """Different rounds produce different feature sets."""
-    ds1 = generate_single_dataset("same-secret", "round-001", 0)
-    ds2 = generate_single_dataset("same-secret", "round-002", 0)
+def test_different_rounds_different_data():
+    """Different rounds should also change informative feature identities."""
+    tmpl = _tmpl()
+    ds1 = generate_single_dataset("same-secret", "round-001", 0, template_override=tmpl)
+    ds2 = generate_single_dataset("same-secret", "round-002", 0, template_override=tmpl)
 
-    cols1 = set(ds1.data.columns)
-    cols2 = set(ds2.data.columns)
-    feature_overlap = (cols1 & cols2) - {ds1.target_name, ds2.target_name}
-    assert len(feature_overlap) < len(cols1) * 0.5, (
-        f"Too much feature overlap between rounds: {feature_overlap}"
+    informative_1 = set(ds1.feature_names[:ds1.metadata["n_informative_features"]])
+    informative_2 = set(ds2.feature_names[:ds2.metadata["n_informative_features"]])
+    feature_overlap = informative_1 & informative_2
+
+    assert len(feature_overlap) < max(1, min(len(informative_1), len(informative_2)) // 2), (
+        f"Too much informative feature overlap between rounds: {feature_overlap}"
     )
 
 
 def test_different_secrets_different_sample_counts():
     """Different secrets can produce different sample counts."""
-    ds1 = generate_single_dataset("secret-one", "round-001", 0)
-    ds2 = generate_single_dataset("secret-two", "round-001", 0)
-    # Not guaranteed to be different, but likely
-    # Just check both are valid
+    tmpl = _tmpl()
+    ds1 = generate_single_dataset("secret-one", "round-001", 0, template_override=tmpl)
+    ds2 = generate_single_dataset("secret-two", "round-001", 0, template_override=tmpl)
     assert ds1.n_samples > 0
     assert ds2.n_samples > 0
 
 
-def test_different_secrets_different_data():
+def test_different_secrets_produce_different_dataset_values():
     """Different secrets produce different data values."""
-    ds1 = generate_single_dataset("secret-aaa", "round-001", 0)
-    ds2 = generate_single_dataset("secret-bbb", "round-001", 0)
+    tmpl = _tmpl()
+    ds1 = generate_single_dataset("secret-aaa", "round-001", 0, template_override=tmpl)
+    ds2 = generate_single_dataset("secret-bbb", "round-001", 0, template_override=tmpl)
 
-    # Even if by some chance they have an overlapping column name,
-    # the values should be different
     assert ds1.n_samples != ds2.n_samples or not ds1.data.equals(ds2.data), (
         "Datasets with different secrets should not be identical"
     )
 
 
 def test_same_inputs_identical_output():
-    """Same secret + round + scenario = identical dataset."""
-    ds1 = generate_single_dataset("fixed-secret", "round-001", 0)
-    ds2 = generate_single_dataset("fixed-secret", "round-001", 0)
+    """Same secret + round + scenario + template = identical dataset."""
+    tmpl = _tmpl()
+    ds1 = generate_single_dataset("fixed-secret", "round-001", 0, template_override=tmpl)
+    ds2 = generate_single_dataset("fixed-secret", "round-001", 0, template_override=tmpl)
 
     assert ds1.target_name == ds2.target_name
     assert ds1.n_samples == ds2.n_samples
     assert list(ds1.data.columns) == list(ds2.data.columns)
 
-    # Check actual data equality
     import pandas.api.types as ptypes
     for col in ds1.data.columns:
         if ptypes.is_string_dtype(ds1.data[col]) or ptypes.is_object_dtype(ds1.data[col]):
@@ -80,14 +85,16 @@ def test_same_inputs_identical_output():
 
 def test_all_scenarios_differ():
     """Different scenario indices produce different datasets."""
+    rng = np.random.default_rng(0)
     datasets = [
-        generate_single_dataset("test-secret", "round-001", i)
+        generate_single_dataset(
+            "test-secret", "round-001", i,
+            template_override=sample_scenario(rng, scenario_id=f"test_{i}"),
+        )
         for i in range(5)
     ]
 
-    # All should have different feature sets
     col_sets = [frozenset(ds.data.columns) for ds in datasets]
-    # Allow some overlap but not identical
     for i in range(len(col_sets)):
         for j in range(i + 1, len(col_sets)):
             assert col_sets[i] != col_sets[j], (

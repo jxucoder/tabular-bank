@@ -1,4 +1,4 @@
-"""synthetic-tab: A contamination-proof tabular ML benchmark.
+"""tabular-bank: A contamination-proof tabular ML benchmark.
 
 Drop-in replacement for TabArena with procedurally generated synthetic datasets.
 All dataset generation is controlled by a secret seed — the repo contains only

@@ -9,7 +9,25 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from synthetic_tab.runner import BenchmarkResult
+from tabular_bank.runner import BenchmarkResult
+
+
+def get_task_scores(result: BenchmarkResult) -> pd.DataFrame:
+    """Extract model-by-task mean score matrix.
+
+    Returns a DataFrame with models as rows and tasks as columns, where
+    each cell is the mean score across all repeats/folds for that pair.
+    This is the canonical input format for meta-evaluation diagnostics.
+    """
+    df = result.to_dataframe()
+    if df.empty:
+        return pd.DataFrame()
+    return (
+        df.groupby(["model", "task"])["score"]
+        .mean()
+        .reset_index()
+        .pivot(index="model", columns="task", values="score")
+    )
 
 
 def generate_leaderboard(result: BenchmarkResult) -> pd.DataFrame:
@@ -23,17 +41,9 @@ def generate_leaderboard(result: BenchmarkResult) -> pd.DataFrame:
 
     Returns a DataFrame sorted by ELO rating.
     """
-    df = result.to_dataframe()
-    if df.empty:
+    task_scores = get_task_scores(result)
+    if task_scores.empty:
         return pd.DataFrame()
-
-    # Compute mean score per model per task
-    task_scores = (
-        df.groupby(["model", "task"])["score"]
-        .mean()
-        .reset_index()
-        .pivot(index="model", columns="task", values="score")
-    )
 
     models = task_scores.index.tolist()
     tasks = task_scores.columns.tolist()
@@ -144,7 +154,7 @@ def generate_leaderboard_tabarena(
     except ImportError:
         raise ImportError(
             "TabArena is required for this operation. "
-            "Install with: pip install synthetic-tab[benchmark]"
+            "Install with: pip install tabular-bank[benchmark]"
         )
 
     # This would use TabArena's full evaluation pipeline

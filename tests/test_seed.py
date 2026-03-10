@@ -1,6 +1,6 @@
 """Tests for seed derivation system."""
 
-from synthetic_tab.generation.seed import (
+from tabular_bank.generation.seed import (
     derive_dag_seed,
     derive_dataset_seed,
     derive_feature_seed,
