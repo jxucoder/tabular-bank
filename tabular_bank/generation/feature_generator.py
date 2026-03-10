@@ -108,7 +108,17 @@ def _generate_unique_name(
 def _format_name_candidate(rng: np.random.Generator, used_names: set[str]) -> str:
     """Assemble the next positional feature identifier."""
     del rng  # Naming is intentionally simple and dataset-local.
-    return f"f_{len(used_names)}"
+    return f"f_{_next_feature_index(used_names)}"
+
+
+def _next_feature_index(used_names: set[str]) -> int:
+    """Pick the next ``f_<n>`` suffix without assuming a dense existing range."""
+    max_seen = -1
+    for name in used_names:
+        prefix, sep, suffix = name.partition("_")
+        if prefix == "f" and sep and suffix.isdigit():
+            max_seen = max(max_seen, int(suffix))
+    return max_seen + 1
 
 
 def _generate_category_label(rng: np.random.Generator, index: int) -> str:
