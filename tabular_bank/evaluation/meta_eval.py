@@ -107,17 +107,23 @@ class MetaEvalReport:
 
 def compute_discriminability(
     task_scores: pd.DataFrame,
-    low_threshold: float = 0.01,
+    low_threshold: float = 0.2,
 ) -> DiscriminabilityResult:
     """Measure how well each task separates models.
 
-    For each task, compute the mean absolute pairwise score difference across
-    all model pairs.  Tasks where all models score nearly identically
-    (DS < ``low_threshold``) are flagged.
+    For each task, compute a scale-normalised discriminability score (DS):
+    the mean absolute pairwise score difference divided by the pooled
+    standard deviation of scores (analogous to Cohen's d).  This makes DS
+    comparable across metrics with different scales (e.g. ROC-AUC in [0,1]
+    vs negative RMSE in [-100, 0]).
+
+    Tasks where all models score nearly identically (DS < ``low_threshold``)
+    are flagged.
 
     Args:
         task_scores: DataFrame with models as rows, tasks as columns.
         low_threshold: DS below this flags a task as non-discriminative.
+            The default (0.2) corresponds roughly to a "small" effect size.
     """
     per_task: dict[str, float] = {}
 
@@ -130,7 +136,10 @@ def compute_discriminability(
             abs(scores[i] - scores[j])
             for i, j in combinations(range(len(scores)), 2)
         ]
-        per_task[task] = float(np.mean(diffs))
+        mean_diff = float(np.mean(diffs))
+        std = float(np.std(scores, ddof=1))
+        # Normalise by pooled std; fall back to raw diff if std is zero
+        per_task[task] = mean_diff / std if std > 0 else 0.0
 
     overall = float(np.mean(list(per_task.values()))) if per_task else 0.0
     flagged = [t for t, ds in per_task.items() if ds < low_threshold]
@@ -221,7 +230,7 @@ def compute_task_diversity(
         vals1 = task_scores[t1].dropna()
         vals2 = task_scores[t2].dropna()
         common_idx = vals1.index.intersection(vals2.index)
-        if len(common_idx) < 3:
+        if len(common_idx) < 5:
             rho = float("nan")
         else:
             rho, _ = spearmanr(vals1[common_idx], vals2[common_idx])
