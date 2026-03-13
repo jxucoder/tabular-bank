@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from scipy.special import expit, softmax
+from scipy.stats import rankdata
 
 from tabular_bank.generation.dag_builder import DAGSpec
 from tabular_bank.generation.feature_generator import _generate_unique_name
@@ -148,21 +149,26 @@ def sample_dataset(
         if template is not None:
             imbalance_ratio = template.get("imbalance_ratio", 0.5)
         # Shift the sigmoid to achieve the desired positive-class ratio.
-        # expit(x + bias) shifts the mean probability; we solve for the bias
-        # that maps the median latent value to the target ratio.
+        # Centre the latent first so the bias term controls the class ratio
+        # regardless of the latent's mean (which can drift after DAG
+        # processing with asymmetric mechanisms or noise).
         from scipy.special import logit
+        latent_centered = data[target_name] - np.mean(data[target_name])
         bias = logit(imbalance_ratio)
-        probs = expit(data[target_name] + bias)
+        probs = expit(latent_centered + bias)
         result[target_name] = rng.binomial(1, probs).astype(int)
     elif target["problem_type"] == "multiclass":
         n_classes = target["n_classes"]
-        # Create n_classes logits by splitting the latent
-        # Use random projections from the latent value
+        # Create n_classes logits using independent random projections so
+        # that every class has a unique, unbiased relationship with the
+        # latent signal.  Previous code used a deterministic formula that
+        # reversed the signal for higher classes and imposed a fixed
+        # frequency ordering.
+        weights = rng.normal(0, 1, size=n_classes)
+        offsets = rng.normal(0, 0.5, size=n_classes)
         logits = np.zeros((n_samples, n_classes))
         for c in range(n_classes):
-            # Each class gets a different linear combination of the latent
-            shift = (c - n_classes / 2) * 0.5
-            logits[:, c] = data[target_name] * (1 - 0.3 * c) + shift
+            logits[:, c] = weights[c] * data[target_name] + offsets[c]
             logits[:, c] += rng.normal(0, 0.3, size=n_samples)
         probs = softmax(logits, axis=1)
         result[target_name] = np.array([
@@ -196,6 +202,12 @@ def _apply_autocorr(raw: np.ndarray, rho: float) -> np.ndarray:
 
     The sqrt(1 - rho^2) scaling preserves unit variance regardless of rho,
     so downstream distribution transforms remain valid.
+
+    Note: the temporal structure uses the *row index* as the time axis.
+    Because cross-validation splits shuffle rows randomly, models cannot
+    exploit the autocorrelation directly.  The primary effect is to reduce
+    the effective sample size of the generated data, making estimation
+    harder — a legitimate difficulty lever even with random splits.
     """
     out = np.empty_like(raw)
     scale = np.sqrt(1.0 - rho ** 2)
@@ -223,8 +235,9 @@ def _sample_correlated_roots(
     if k <= 1 or strength <= 0:
         return {n: rng.normal(0, 1, size=n_samples) for n in root_nodes}
 
-    # Build a random correlation matrix via the "onion" method:
-    # sample a random unit vector per pair and blend toward identity.
+    # Build a random correlation matrix via a Wishart-derived construction:
+    # sample a Gaussian matrix, form its Gram matrix, then normalise to a
+    # correlation matrix and blend toward identity to control strength.
     raw = rng.normal(0, 1, size=(k, k))
     cov = raw @ raw.T
     d = np.sqrt(np.diag(cov))
@@ -374,11 +387,13 @@ def _transform_to_distribution(
     dist = feature["distribution"]
     params = feature["params"]
 
-    # Use rank-based transformation to preserve ordering while matching distribution
-    # This keeps the causal relationships intact
-    ranks = np.argsort(np.argsort(latent))
+    # Use rank-based transformation to preserve ordering while matching
+    # distribution.  ``rankdata`` with method='average' handles ties
+    # correctly by assigning the mean rank to tied values, avoiding the
+    # artificial noise that argsort-based ranking introduces.
     n = len(latent)
-    quantiles = (ranks + 0.5) / n
+    ranks = rankdata(latent, method="average")  # 1-based
+    quantiles = (ranks - 0.5) / n
 
     if dist == "normal":
         from scipy.stats import norm
@@ -444,7 +459,9 @@ def _inject_noise_features(
       - Random combo: random linear combination of 2-3 existing features
     """
     n_informative = len(features)
-    n_noise = max(1, int(n_informative * noise_ratio))
+    n_noise = int(round(n_informative * noise_ratio))
+    if n_noise < 1:
+        return result
     used_names = {f["name"] for f in features}
 
     continuous_names = [f["name"] for f in features if f["type"] == "continuous"]

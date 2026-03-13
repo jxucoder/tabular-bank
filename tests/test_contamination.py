@@ -74,9 +74,14 @@ def test_same_inputs_identical_output():
     import pandas.api.types as ptypes
     for col in ds1.data.columns:
         if ptypes.is_string_dtype(ds1.data[col]) or ptypes.is_object_dtype(ds1.data[col]):
-            assert (ds1.data[col].astype(str) == ds2.data[col].astype(str)).all(), f"Column {col} differs"
+            # Use fillna so NaN == NaN comparisons work correctly
+            assert (
+                ds1.data[col].fillna("__NA__") == ds2.data[col].fillna("__NA__")
+            ).all(), f"Column {col} differs"
         else:
-            assert (ds1.data[col] - ds2.data[col]).abs().max() < 1e-10, f"Column {col} differs"
+            diff = (ds1.data[col].fillna(0) - ds2.data[col].fillna(0)).abs().max()
+            both_nan = ds1.data[col].isna() == ds2.data[col].isna()
+            assert both_nan.all() and diff < 1e-10, f"Column {col} differs"
 
 
 def test_all_scenarios_differ():

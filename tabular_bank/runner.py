@@ -311,6 +311,12 @@ def _encode_features(
     Encodes categoricals with train-set label maps and imputes numeric NaN
     values with the train median so pure-numeric datasets with missingness
     remain compatible with basic sklearn estimators.
+
+    Limitation: categorical columns are integer-label-encoded, which imposes
+    an artificial ordinal relationship.  This is fine for tree-based models
+    but can bias linear or distance-based models.  Callers needing
+    one-hot encoding should pre-process their data before calling
+    ``evaluate_model``.
     """
     X_train = X_train.copy()
     X_test = X_test.copy()
