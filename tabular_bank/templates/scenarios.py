@@ -110,7 +110,11 @@ SCENARIO_SPACE = {
 }
 
 
-def sample_scenario(rng, scenario_id: str = "sampled") -> dict:
+def sample_scenario(
+    rng,
+    scenario_id: str = "sampled",
+    scenario_space: dict | None = None,
+) -> dict:
     """Sample a scenario template from the continuous parameter space.
 
     Instead of picking from the 5 fixed presets, draw all parameters
@@ -120,11 +124,14 @@ def sample_scenario(rng, scenario_id: str = "sampled") -> dict:
     Args:
         rng: NumPy random Generator.
         scenario_id: Identifier string for the generated scenario.
+        scenario_space: Optional overrides merged on top of
+            :data:`SCENARIO_SPACE`.  Only the keys you provide are
+            changed; everything else keeps its default.
 
     Returns:
         A scenario dict compatible with the fixed-template format.
     """
-    sp = SCENARIO_SPACE
+    sp = {**SCENARIO_SPACE, **(scenario_space or {})}
 
     # Problem type
     types = list(sp["problem_type_weights"].keys())
@@ -132,12 +139,19 @@ def sample_scenario(rng, scenario_id: str = "sampled") -> dict:
     problem_type = str(rng.choice(types, p=weights))
 
     lo, hi = sp["n_features_range"]
-    n_feat_lo = int(rng.integers(lo, hi - 2))
-    n_feat_hi = int(rng.integers(n_feat_lo + 2, hi + 1))
+    if hi - lo < 3:
+        n_feat_lo, n_feat_hi = lo, hi
+    else:
+        n_feat_lo = int(rng.integers(lo, hi - 2))
+        n_feat_hi = int(rng.integers(n_feat_lo + 2, hi + 1))
 
     lo, hi = sp["n_samples_range"]
-    n_samp_lo = int(rng.integers(lo, hi // 2))
-    n_samp_hi = int(rng.integers(n_samp_lo + 500, hi + 1))
+    if hi - lo < 500:
+        n_samp_lo, n_samp_hi = lo, hi
+    else:
+        mid = max(lo + 1, hi // 2)
+        n_samp_lo = int(rng.integers(lo, mid))
+        n_samp_hi = int(rng.integers(n_samp_lo + 500, hi + 1))
 
     cat_ratio = float(rng.uniform(*sp["categorical_ratio_range"]))
 

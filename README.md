@@ -110,35 +110,81 @@ flowchart TD
     SG --> SGO["Cross-Validation Folds\n(10 repeats × 3 folds)"]
 ```
 
+## Customizing Generated Datasets
+
+Every scenario parameter can be overridden via `scenario_space` — pass only the keys you want to change and the rest keep their defaults.
+
+```python
+from tabular_bank.generation.engine import generate_sampled_datasets
+
+# Large datasets with many features
+datasets = generate_sampled_datasets(
+    "your-secret",
+    n_scenarios=5,
+    scenario_space={
+        "n_samples_range": (50000, 100000),
+        "n_features_range": (50, 200),
+    },
+)
+
+# Only regression tasks, no missing values
+datasets = generate_sampled_datasets(
+    "your-secret",
+    n_scenarios=10,
+    scenario_space={
+        "problem_type_weights": {"regression": 1.0},
+        "missing_rate_range": (0.0, 0.0),
+    },
+)
+
+# Easy, low-noise binary classification
+datasets = generate_sampled_datasets(
+    "your-secret",
+    n_scenarios=10,
+    scenario_space={
+        "problem_type_weights": {"binary": 1.0},
+        "noise_scale_range": (0.05, 0.15),
+        "nonlinear_prob_range": (0.0, 0.1),
+    },
+)
+```
+
+The same works from the CLI with `--set`:
+
+```bash
+tabular-bank generate --secret "your-secret" --n-scenarios 5 \
+    --set n_samples_range=50000,100000 \
+    --set n_features_range=50,200
+```
+
+**All configurable axes:**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `problem_type_weights` | `{binary: .45, multiclass: .25, regression: .3}` | Probability of each task type |
+| `n_samples_range` | `(1000, 15000)` | Row count range |
+| `n_features_range` | `(5, 30)` | Feature count range |
+| `n_classes_range` | `(3, 8)` | Number of classes (multiclass) |
+| `categorical_ratio_range` | `(0.1, 0.6)` | Fraction of categorical features |
+| `noise_scale_range` | `(0.1, 1.0)` | Label noise intensity |
+| `nonlinear_prob_range` | `(0.05, 0.6)` | Probability of nonlinear edge mechanisms |
+| `interaction_prob_range` | `(0.0, 0.3)` | Probability of interaction effects |
+| `missing_rate_range` | `(0.0, 0.15)` | Fraction of missing values |
+| `missing_mechanisms` | `[MCAR, MAR, MNAR]` | Missing-data mechanisms to sample from |
+| `edge_density_range` | `(0.45, 0.65)` | DAG edge density |
+| `max_parents_range` | `(2, 6)` | Max parents per node in the DAG |
+| `n_confounders_range` | `(0, 4)` | Number of latent confounders |
+| `imbalance_ratio_range` | `(0.05, 0.5)` | Class imbalance (binary tasks) |
+
 ## Parametric Scenario Sampling
 
 Rather than fixed hand-crafted templates, `tabular-bank` samples all scenario parameters from a continuous space (CausalProfiler-inspired coverage guarantee). Any valid configuration has non-zero probability of being generated, producing diverse, non-redundant benchmark tasks.
-
-**Sampled axes include:**
-- Problem type: binary classification, multiclass, regression
-- Feature count, sample size, categorical ratio
-- Difficulty: noise scale, nonlinearity probability, interaction probability, heteroscedastic noise probability, DAG edge density
-- DAG complexity: confounder count and strength, max parent count
-- Missing values: rate and mechanism (MCAR / MAR / MNAR)
-- Class imbalance ratio (binary tasks)
-- Temporal autocorrelation in root features
-- Root feature correlations (multivariate Gaussian)
 
 Edges no longer draw from a tiny fixed "form" enum alone. Each edge samples a
 structured mechanism specification, with families including linear, threshold,
 sigmoid, tanh, piecewise-linear, sinusoidal, spline, and interaction effects.
 Non-root nodes can also sample heteroscedastic residual noise models whose
 variance depends on one of their parents.
-
-```python
-from tabular_bank.generation.engine import generate_sampled_datasets
-
-datasets = generate_sampled_datasets(
-    master_secret="your-secret",
-    round_id="round-001",
-    n_scenarios=20,
-)
-```
 
 ## TabArena Compatibility
 
