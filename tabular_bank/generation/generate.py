@@ -28,11 +28,14 @@ def generate_all(
     n_scenarios: int = 10,
     cache_dir: str | Path | None = None,
     force: bool = False,
+    scenario_space: dict | None = None,
 ) -> list[Path]:
     """Generate benchmark datasets for a round by sampling from the scenario space.
 
     Args:
         n_scenarios: Number of scenarios to sample and generate.
+        scenario_space: Optional overrides for the default scenario space
+            (e.g. ``{"n_samples_range": (50000, 100000)}``).
 
     Returns list of paths to generated dataset directories.
     """
@@ -40,7 +43,8 @@ def generate_all(
     cache = Path(cache_dir) if cache_dir else get_default_cache_dir()
     round_dir = cache / round_id
 
-    datasets = generate_sampled_datasets(secret, round_id, n_scenarios=n_scenarios)
+    datasets = generate_sampled_datasets(secret, round_id, n_scenarios=n_scenarios,
+                                         scenario_space=scenario_space)
     scenario_ids = [ds.scenario_id for ds in datasets]
     paths = []
     for i, ds in enumerate(datasets):
@@ -65,13 +69,15 @@ def generate_one(
     round_id: str = "round-001",
     cache_dir: str | Path | None = None,
     force: bool = False,
+    scenario_space: dict | None = None,
 ) -> Path:
     """Generate a single sampled dataset and save to cache."""
     secret = get_master_secret(master_secret, cache_dir)
     cache = Path(cache_dir) if cache_dir else get_default_cache_dir()
     round_dir = cache / round_id
 
-    datasets = generate_sampled_datasets(secret, round_id, n_scenarios=scenario_index + 1)
+    datasets = generate_sampled_datasets(secret, round_id, n_scenarios=scenario_index + 1,
+                                         scenario_space=scenario_space)
     ds = datasets[scenario_index]
     ds_dir = round_dir / ds.scenario_id
 

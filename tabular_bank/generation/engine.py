@@ -149,12 +149,19 @@ def generate_sampled_datasets(
     master_secret: str,
     round_id: str = "round-001",
     n_scenarios: int = 10,
+    scenario_space: dict | None = None,
 ) -> list[GeneratedDataset]:
     """Generate benchmark datasets by sampling from the scenario space.
 
     Instead of using the fixed 5 templates, draws ``n_scenarios`` random
     configurations from the continuous parameter space (CausalProfiler-style
     coverage guarantee).
+
+    Args:
+        scenario_space: Optional overrides for the default
+            :data:`~tabular_bank.templates.scenarios.SCENARIO_SPACE`.
+            Only the keys you provide are changed; everything else
+            keeps its default value.
     """
     round_seed = derive_round_seed(master_secret, round_id)
     # round_seed is 32 bytes; convert to int for numpy RNG
@@ -162,7 +169,8 @@ def generate_sampled_datasets(
 
     datasets = []
     for i in range(n_scenarios):
-        tmpl = sample_scenario(scenario_rng, scenario_id=f"sampled_{i}")
+        tmpl = sample_scenario(scenario_rng, scenario_id=f"sampled_{i}",
+                               scenario_space=scenario_space)
         ds = generate_single_dataset(master_secret, round_id, i, template_override=tmpl)
         datasets.append(ds)
     return datasets
