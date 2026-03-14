@@ -27,26 +27,39 @@ pip install "tabular-bank[benchmark]"
 ### Generate Datasets
 
 ```bash
-# Via CLI
+# Via CLI (generates and caches datasets to disk)
 tabular-bank generate --round round-001 --secret "your-secret" --n-scenarios 10
+```
 
-# Via Python
+```python
+# Via Python (in-memory)
+from tabular_bank.generation.engine import generate_sampled_datasets
+
+datasets = generate_sampled_datasets("your-secret", round_id="round-001", n_scenarios=10)
+
+# Via Python (generate and cache to disk, returns list of paths)
 from tabular_bank.generation.generate import generate_all
-generate_all(master_secret="your-secret", round_id="round-001", n_scenarios=10)
+
+paths = generate_all(master_secret="your-secret", round_id="round-001", n_scenarios=10)
 ```
 
 ### Run a Benchmark
 
 ```python
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from tabular_bank.context import TabularBankContext
+from sklearn.ensemble import (
+    GradientBoostingClassifier, GradientBoostingRegressor,
+    RandomForestClassifier, RandomForestRegressor,
+)
 from tabular_bank.runner import run_benchmark
 from tabular_bank.leaderboard import generate_leaderboard, format_leaderboard
 
-# Models to benchmark
+# Models to benchmark (include both classifiers and regressors
+# so all task types — binary, multiclass, and regression — are covered)
 models = {
-    "GBM": GradientBoostingClassifier(n_estimators=100),
-    "RF": RandomForestClassifier(n_estimators=100),
+    "GBM-clf": GradientBoostingClassifier(n_estimators=100),
+    "RF-clf": RandomForestClassifier(n_estimators=100),
+    "GBM-reg": GradientBoostingRegressor(n_estimators=100),
+    "RF-reg": RandomForestRegressor(n_estimators=100),
 }
 
 # Run benchmark
