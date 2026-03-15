@@ -58,12 +58,21 @@ class SyntheticTask:
         return 0
 
     def to_tabarena_task(self, cache_path: Path | None = None):
-        """Convert to a TabArena UserTask if TabArena is installed.
+        """Convert to a TabArena UserTask (local OpenML task) for use with
+        TabArena's ExperimentBatchRunner pipeline.
+
+        The conversion:
+        1. Creates a ``UserTask`` wrapper with a unique name
+        2. Calls ``create_local_openml_task`` to build the OpenML task object
+        3. Saves the task to disk so ``ExperimentBatchRunner`` can load it
+
+        Returns the ``UserTask`` instance. The underlying OpenML task is
+        accessible via ``user_task.load_local_openml_task()``.
 
         Raises ImportError if TabArena is not installed.
         """
         try:
-            from tabarena.benchmark.task.user_task import UserTask, save_local_openml_task
+            from tabarena.benchmark.task.user_task import UserTask
         except ImportError:
             raise ImportError(
                 "TabArena is required for this operation. "
@@ -72,24 +81,40 @@ class SyntheticTask:
 
         if cache_path is None:
             import tempfile
-            cache_path = Path(tempfile.mkdtemp()) / "tabular_bank_tasks"
+            cache_path = Path(tempfile.gettempdir()) / "tabular_bank_tasks"
+        cache_path.mkdir(parents=True, exist_ok=True)
 
-        # Convert splits to TabArena format: repeat -> fold -> (train_idx, test_idx)
-        tabarena_splits = {}
+        # Map tabular-bank problem types to TabArena's expected types
+        tabarena_problem_type = (
+            "classification" if self.problem_type in ("binary", "multiclass")
+            else "regression"
+        )
+
+        # Convert splits to TabArena format: repeat -> fold -> (train_list, test_list)
+        # TabArena expects plain Python lists, not numpy arrays.
+        tabarena_splits: dict[int, dict[int, tuple[list, list]]] = {}
         for repeat, folds in self.splits.items():
             tabarena_splits[repeat] = {}
             for fold, (train_idx, test_idx) in folds.items():
-                tabarena_splits[repeat][fold] = (train_idx, test_idx)
+                tabarena_splits[repeat][fold] = (
+                    train_idx.tolist() if hasattr(train_idx, "tolist") else list(train_idx),
+                    test_idx.tolist() if hasattr(test_idx, "tolist") else list(test_idx),
+                )
 
-        task = UserTask(
-            name=self.name,
-            cache_path=str(cache_path),
-            dataset=self.dataset,
-            target=self.target,
-            problem_type=self.problem_type,
+        # Ensure categorical columns have the right dtype for TabArena/OpenML
+        dataset = self.dataset.copy()
+        for col in dataset.select_dtypes(include=["object"]).columns:
+            dataset[col] = dataset[col].astype("category")
+
+        user_task = UserTask(task_name=self.name, task_cache_path=cache_path)
+        openml_task = user_task.create_local_openml_task(
+            target_feature=self.target,
+            problem_type=tabarena_problem_type,
+            dataset=dataset,
+            splits=tabarena_splits,
         )
-        save_local_openml_task(task=task, splits=tabarena_splits)
-        return task
+        user_task.save_local_openml_task(openml_task)
+        return user_task
 
 
 def load_tasks_from_cache(

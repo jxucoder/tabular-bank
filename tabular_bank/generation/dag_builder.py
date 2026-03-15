@@ -208,8 +208,12 @@ def build_dag(
                     edge.mechanism["interaction_parent"] = other_parent
                 else:
                     # Fall back to linear if no other parent available
-                    edge.form = "linear"
-                    edge.mechanism = {"type": "linear"}
+                    edge = Edge(
+                        parent=parent,
+                        child=node,
+                        coefficient=coefficient,
+                        mechanism={"type": "linear"},
+                    )
 
             edges.append(edge)
 
@@ -310,11 +314,26 @@ def _inject_confounders(
     return confounders
 
 
-def _validate_dag_stats(dag: DAGSpec) -> None:
-    """Warn if DAG statistics fall outside empirical real-world ranges.
+class DAGValidationError(ValueError):
+    """Raised when a DAG has critical structural issues that would produce unusable data."""
 
-    Ranges are derived from a survey of UCI/OpenML tabular datasets.
-    This is a soft check — it warns but does not fail.
+
+# Thresholds beyond which the DAG is considered degenerate (not just unusual).
+# These are deliberately wider than _REAL_WORLD_STATS — they catch only truly
+# broken graphs while allowing the softer warning range for merely unusual ones.
+_CRITICAL_STATS = {
+    "mean_in_degree": (0.0, 8.0),   # 0 means no edges at all; >8 is pathological
+    "root_fraction": (0.0, 1.0),     # all-root means no causal structure
+    "max_in_degree": (0, 15),        # extremely dense fan-in
+}
+
+
+def _validate_dag_stats(dag: DAGSpec) -> None:
+    """Validate DAG statistics against empirical real-world ranges.
+
+    Critical structural issues (degenerate graphs that would crash the sampler
+    or produce useless data) raise ``DAGValidationError``. Softer deviations
+    from typical real-world ranges issue warnings.
     """
     observed_nodes = [n for n in dag.nodes if n != dag.target]
     n_observed = len(observed_nodes)
@@ -327,6 +346,14 @@ def _validate_dag_stats(dag: DAGSpec) -> None:
         if not edge.is_confounder and edge.child in in_degrees:
             in_degrees[edge.child] += 1
 
+    # --- Critical check: all-roots (must be before non_root_degrees filter) ---
+    root_fraction = len(dag.root_nodes) / n_observed
+    if root_fraction >= 1.0 and n_observed > 1:
+        raise DAGValidationError(
+            f"All {n_observed} observed nodes are roots — the DAG has no causal "
+            f"structure. The sampler would produce independent features."
+        )
+
     non_root_degrees = [
         d for n, d in in_degrees.items()
         if n not in dag.root_nodes and n != dag.target
@@ -336,9 +363,29 @@ def _validate_dag_stats(dag: DAGSpec) -> None:
         return
 
     mean_in_degree = np.mean(non_root_degrees)
-    root_fraction = len(dag.root_nodes) / n_observed
     max_in_degree = max(in_degrees.values())
 
+    # --- Critical checks (raise) ---
+    crit_lo, crit_hi = _CRITICAL_STATS["mean_in_degree"]
+    if mean_in_degree <= crit_lo:
+        raise DAGValidationError(
+            f"DAG mean in-degree is {mean_in_degree:.2f} (effectively no edges). "
+            f"The graph is severely disconnected."
+        )
+    if mean_in_degree > crit_hi:
+        raise DAGValidationError(
+            f"DAG mean in-degree {mean_in_degree:.2f} exceeds critical threshold "
+            f"{crit_hi}. The graph is pathologically dense."
+        )
+
+    crit_lo, crit_hi = _CRITICAL_STATS["max_in_degree"]
+    if max_in_degree > crit_hi:
+        raise DAGValidationError(
+            f"DAG max in-degree {max_in_degree} exceeds critical threshold "
+            f"{crit_hi}. At least one node has a pathological number of parents."
+        )
+
+    # --- Soft checks (warn) ---
     lo, hi = _REAL_WORLD_STATS["mean_in_degree"]
     if not (lo <= mean_in_degree <= hi):
         warnings.warn(

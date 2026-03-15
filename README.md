@@ -186,13 +186,61 @@ sigmoid, tanh, piecewise-linear, sinusoidal, spline, and interaction effects.
 Non-root nodes can also sample heteroscedastic residual noise models whose
 variance depends on one of their parents.
 
-## TabArena Compatibility
+## TabArena Integration
 
-`tabular-bank` is designed as a drop-in replacement for TabArena. Generated datasets can be converted to TabArena's `UserTask` format for use with TabArena's full evaluation pipeline (8-fold bagging, standardized HPO, ELO leaderboards).
+`tabular-bank` datasets are fully compatible with [TabArena](https://github.com/autogluon/tabarena)'s evaluation pipeline. Any code that consumes TabArena datasets can also consume tabular-bank datasets — just swap the data source.
+
+### Quick: Run TabArena Pipeline on Synthetic Data
+
+```python
+from tabular_bank.runner import run_benchmark_tabarena
+from tabular_bank.leaderboard import generate_leaderboard_standalone
+from tabular_bank.context import TabularBankContext
+
+# Generate & evaluate (uses LightGBM + RandomForest by default)
+results = run_benchmark_tabarena(
+    round_id="round-001",
+    master_secret="your-secret",
+    n_scenarios=5,
+)
+
+# Generate leaderboard
+ctx = TabularBankContext(round_id="round-001", master_secret="your-secret", n_scenarios=5)
+leaderboard = generate_leaderboard_standalone(results, ctx.get_task_metadata())
+print(leaderboard)
+```
+
+### Custom Experiments
+
+```python
+from tabarena.benchmark.experiment import AGModelBagExperiment
+from autogluon.tabular.models import LGBModel
+
+experiments = [
+    AGModelBagExperiment(
+        name="LightGBM_tuned",
+        model_cls=LGBModel,
+        model_hyperparameters={"learning_rate": 0.05},
+        num_bag_folds=8,
+        time_limit=3600,
+    ),
+]
+
+results = run_benchmark_tabarena(
+    round_id="round-001",
+    master_secret="your-secret",
+    experiments=experiments,
+)
+```
+
+### Direct Task Conversion
+
+For existing TabArena workflows, convert tasks directly:
 
 ```python
 ctx = TabularBankContext(round_id="round-001", master_secret="your-secret")
-tabarena_tasks = ctx.get_tabarena_tasks()  # Requires tabarena package
+user_tasks = ctx.get_tabarena_tasks()        # List of TabArena UserTask objects
+task_metadata = ctx.get_task_metadata()       # DataFrame for ExperimentBatchRunner
 ```
 
 ## License

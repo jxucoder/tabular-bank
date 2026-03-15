@@ -86,6 +86,22 @@ nonlinearity, interaction probability, confounder strength, etc. produces
 more diverse and diagnostic benchmarks. The `sample_scenario()` function
 samples each axis independently.
 
+### Why expose full scenario-space overrides?
+
+Default sampling is useful for benchmark rounds, but development and stress
+testing need targeted control over individual axes without changing the engine.
+`scenario_space` overrides (Python) and repeatable `--set KEY=VALUE` overrides
+(CLI) let users constrain or widen selected ranges while preserving
+reproducible seed-derived generation.
+
+### Supported task families
+
+Current sampled tasks cover:
+
+- **binary classification** (default metric: ROC-AUC)
+- **multiclass classification** (default metric: log loss, reported as negative log loss so higher is better)
+- **regression** (default metric: RMSE, reported as negative RMSE so higher is better)
+
 ### Class imbalance via sigmoid bias
 
 Real-world binary problems are often 90/10 or worse (CLIMB benchmark).
@@ -104,6 +120,12 @@ multivariate Gaussian with a randomly generated correlation matrix,
 then transform each marginal to its target distribution via quantile
 mapping (the same rank-based transform already used in
 `_transform_to_distribution`).
+
+### Temporal autocorrelation as a difficulty lever
+
+Some sampled root nodes use AR(1) structure. This injects serial dependence
+without changing the benchmark API, reducing effective sample size and making
+estimation harder for models that over-assume i.i.d. behavior.
 
 ### Missing value mechanisms
 
@@ -128,11 +150,15 @@ specification to structured mechanism dicts rather than a single enum.
 
 Current mechanism families include:
 
+- **linear**: additive linear effects
+- **quadratic**: curvature around a sampled center
+- **threshold**: hard regime changes
 - **sigmoid**: saturating relationships (biological/medical data)
 - **tanh**: smooth bounded responses with signed saturation
 - **piecewise_linear**: threshold effects with slopes, not just steps
 - **sinusoidal**: periodic/seasonal effects
 - **spline**: smooth local nonlinearities without committing to a single analytic form
+- **interaction**: multiplicative dependence on a second parent
 
 ### Heteroscedastic residual noise
 
@@ -191,6 +217,7 @@ Every generation improvement should be validated via:
 - **Class imbalance** — `imbalance_ratio` in scenarios, sigmoid bias in sampler
 - **Noise features** — `noise_feature_ratio` in scenarios, three noise types in sampler
 - **Parametric scenarios** — `sample_scenario()`, `SCENARIO_SPACE`, `generate_sampled_datasets()`
+- **Scenario-space overrides** — generation APIs and CLI accept partial parameter-space overrides (`scenario_space`, `--set`)
 - **Correlated roots** — `root_correlation_strength` in difficulty presets, multivariate Gaussian sampling
 - **Missing values** — `tabular_bank/generation/missing.py` with MCAR/MAR/MNAR
 - **Structured mechanisms** — edge behavior now uses sampled mechanism dicts, with tanh and spline support in dag_builder + sampler
@@ -198,11 +225,18 @@ Every generation improvement should be validated via:
 
 ### Runner Fix
 - `_encode_features()` now handles NaN in both categorical and numeric columns (median imputation for numerics, -1 for categoricals)
+- ROC-AUC evaluation now falls back to accuracy when a split has a single-class test target (avoids undefined-metric crashes)
 
 ### Follow-on Hardening
 - **Simple feature naming restored** — informative and noise features now use readable dataset-local labels like `f_0`, `f_1`, ...
 - **Round metadata made authoritative** — cache loading now follows `scenario_ids`, avoiding stale extra datasets when `n_scenarios` changes
 - **Sampler fixes** — confounders now affect root nodes, and autocorrelation is applied before marginal distribution transforms so supports stay valid
+- **Numerical guardrails** — root-correlation strength and autocorrelation are clamped to stable ranges; spline interpolation handles unsorted knots
+
+### Packaging and Examples
+- **PyPI release pipeline** — `.github/workflows/publish-pypi.yml` builds and publishes tagged releases
+- **Kaggle-style bundles** — `examples/problems/*` packages generated tasks in competition-style format
+- **Generation website** — `website/` documents generation studies and outputs
 
 ---
 

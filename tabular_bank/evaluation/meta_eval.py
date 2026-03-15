@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kendalltau, spearmanr
 
+from tabular_bank.leaderboard import get_task_scores
+
 
 # ---------------------------------------------------------------------------
 # Public data structures
@@ -251,30 +253,13 @@ def compute_task_diversity(
 
 
 # ---------------------------------------------------------------------------
-# Convenience: get task score matrix from BenchmarkResult
-# ---------------------------------------------------------------------------
-
-def get_task_scores(result) -> pd.DataFrame:
-    """Extract model-by-task mean score matrix from a BenchmarkResult."""
-    df = result.to_dataframe()
-    if df.empty:
-        return pd.DataFrame()
-    return (
-        df.groupby(["model", "task"])["score"]
-        .mean()
-        .reset_index()
-        .pivot(index="model", columns="task", values="score")
-    )
-
-
-# ---------------------------------------------------------------------------
 # Full meta-eval pipeline
 # ---------------------------------------------------------------------------
 
 def run_meta_eval(
     result,
     reference_ranking: dict[str, int] | None = None,
-    discriminability_threshold: float = 0.01,
+    discriminability_threshold: float = 0.2,
     redundancy_threshold: float = 0.9,
 ) -> MetaEvalReport:
     """Run all meta-evaluation diagnostics on a BenchmarkResult.
