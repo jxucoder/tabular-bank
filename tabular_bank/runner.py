@@ -155,6 +155,7 @@ def run_benchmark(
     cache_dir: str | Path | None = None,
     repeats: list[int] | None = None,
     folds: list[int] | None = None,
+    n_scenarios: int = 10,
 ) -> BenchmarkResult:
     """Run a full benchmark with multiple models across all tasks.
 
@@ -171,6 +172,7 @@ def run_benchmark(
         cache_dir: Cache directory.
         repeats: Which repeats to run. Defaults to all.
         folds: Which folds to run. Defaults to all.
+        n_scenarios: Expected number of scenarios in the round cache.
 
     Returns:
         BenchmarkResult with all results.
@@ -179,6 +181,7 @@ def run_benchmark(
         round_id=round_id,
         master_secret=master_secret,
         cache_dir=cache_dir,
+        n_scenarios=n_scenarios,
     )
 
     benchmark = BenchmarkResult()

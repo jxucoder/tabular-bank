@@ -42,6 +42,24 @@ def generate_leaderboard(result: BenchmarkResult) -> pd.DataFrame:
     Returns a DataFrame sorted by ELO rating.
     """
     task_scores = get_task_scores(result)
+    return _generate_leaderboard_from_task_scores(task_scores)
+
+
+def generate_leaderboard_from_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Generate a leaderboard from a result-like DataFrame."""
+    if df.empty:
+        return pd.DataFrame()
+    task_scores = (
+        df.groupby(["model", "task"])["score"]
+        .mean()
+        .reset_index()
+        .pivot(index="model", columns="task", values="score")
+    )
+    return _generate_leaderboard_from_task_scores(task_scores)
+
+
+def _generate_leaderboard_from_task_scores(task_scores: pd.DataFrame) -> pd.DataFrame:
+    """Compute leaderboard metrics from a model-by-task score matrix."""
     if task_scores.empty:
         return pd.DataFrame()
 

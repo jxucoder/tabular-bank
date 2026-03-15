@@ -18,6 +18,7 @@ from tabular_bank.generation.engine import (
     generate_sampled_datasets,
 )
 from tabular_bank.generation.seed import get_default_cache_dir, get_master_secret
+from tabular_bank.rounds import write_round_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ def generate_all(
         logger.info("Generated dataset %d/%d: %s", i + 1, n_scenarios, ds_dir.name)
 
     _save_round_metadata(round_dir, round_id, scenario_ids)
+    write_round_manifest(round_id=round_id, cache_dir=cache)
     return paths
 
 
@@ -86,10 +88,12 @@ def generate_one(
         if marker.exists():
             logger.info("Skipping %s (already exists)", ds.scenario_id)
             _save_round_metadata(round_dir, round_id, _merge_scenario_ids(round_dir, ds.scenario_id))
+            write_round_manifest(round_id=round_id, cache_dir=cache)
             return ds_dir
 
     _save_dataset(ds, ds_dir)
     _save_round_metadata(round_dir, round_id, _merge_scenario_ids(round_dir, ds.scenario_id))
+    write_round_manifest(round_id=round_id, cache_dir=cache)
     return ds_dir
 
 

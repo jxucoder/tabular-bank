@@ -1,6 +1,6 @@
 # tabular-bank
 
-A contamination-proof tabular ML benchmark — drop-in replacement for [TabArena](https://github.com/autogluon/tabarena) with procedurally generated synthetic datasets.
+A contamination-proof tabular ML benchmark with procedurally generated synthetic datasets, TabArena-compatible evaluation, and official round/leaderboard tooling.
 
 ## Why tabular-bank?
 
@@ -20,6 +20,9 @@ pip install tabular-bank
 
 # With TabArena integration for official benchmarking
 pip install "tabular-bank[benchmark]"
+
+# Optional tabular foundation-model baseline support
+pip install "tabular-bank[foundation]"
 ```
 
 ## Quick Start
@@ -79,6 +82,27 @@ print(format_leaderboard(leaderboard))
 ```bash
 tabular-bank info --round round-001
 ```
+
+### Validate, Rank, and Publish a Round
+
+```bash
+# Validate round artifacts and write validation_report.json
+tabular-bank validate --round round-001
+
+# Run official checked-in baselines
+tabular-bank run-baselines --round round-001
+
+# Build a static leaderboard site
+tabular-bank build-board --round round-001 --output-dir ./site
+```
+
+Generated official artifacts live under the round cache directory:
+
+- `round_manifest.json`
+- `validation_report.json`
+- `official_baselines/results.csv`
+- `official_baselines/methods.json`
+- `official_baselines/run_manifest.json`
 
 You can also set `TABULAR_BANK_SECRET` and `TABULAR_BANK_CACHE` in the environment.
 Legacy `SYNTHETIC_TAB_SECRET` / `SYNTHETIC_TAB_CACHE` names are still accepted.

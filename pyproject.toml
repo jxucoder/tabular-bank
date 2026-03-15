@@ -35,6 +35,9 @@ benchmark = [
     "tabarena",
     "autogluon.tabular>=1.0",
 ]
+foundation = [
+    "tabpfn",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from hashlib import sha1
 from pathlib import Path
 
 import pandas as pd
@@ -155,7 +156,7 @@ class TabularBankContext:
             )
 
             rows.append({
-                "tid": hash(task.name) % 10**10,
+                "tid": _stable_tid(task.name),
                 "name": task.name,
                 "problem_type": tabarena_problem_type,
                 "metric": metric,
@@ -182,3 +183,8 @@ class TabularBankContext:
         if n_datasets > 0:
             return [f"sampled_{i}" for i in range(n_datasets)]
         return None
+
+
+def _stable_tid(name: str) -> int:
+    """Return a stable task identifier suitable for cached metadata."""
+    return int(sha1(name.encode("utf-8")).hexdigest()[:12], 16)
