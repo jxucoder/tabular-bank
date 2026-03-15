@@ -112,3 +112,17 @@ def test_encode_features_imputes_test_only_missing_values():
     assert not test_enc.isna().any().any()
     assert test_enc.loc[0, "a"] == pytest.approx(2.0)
     assert test_enc.loc[0, "b"] == -1
+
+
+def test_roc_auc_falls_back_when_test_split_has_single_class():
+    """ROC-AUC should not crash when y_test contains only one class."""
+
+    class ConstantPredictor:
+        def predict(self, X):
+            return np.zeros(len(X), dtype=int)
+
+    X_test = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
+    y_test = pd.Series([0, 0, 0])
+
+    score = _evaluate_metric(ConstantPredictor(), X_test, y_test, "binary", "roc_auc")
+    assert score == 1.0

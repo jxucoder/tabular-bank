@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.signal import lfilter
 from scipy.special import expit, softmax
 from scipy.stats import rankdata
 
@@ -209,11 +210,15 @@ def _apply_autocorr(raw: np.ndarray, rho: float) -> np.ndarray:
     the effective sample size of the generated data, making estimation
     harder — a legitimate difficulty lever even with random splits.
     """
-    out = np.empty_like(raw)
+    rho = float(np.clip(rho, -0.999, 0.999))
     scale = np.sqrt(1.0 - rho ** 2)
-    out[0] = raw[0]
-    for t in range(1, len(raw)):
-        out[t] = rho * out[t - 1] + scale * raw[t]
+    # Vectorized AR(1) via IIR filter: y[t] = rho*y[t-1] + scale*raw[t]
+    # lfilter with b=[scale], a=[1, -rho] computes this in C, avoiding a
+    # slow Python loop over all samples.
+    scaled_raw = raw.copy()
+    scaled_raw[0] = raw[0]  # first element passes through unscaled
+    scaled_raw[1:] = scale * raw[1:]
+    out = lfilter([1.0], [1.0, -rho], scaled_raw)
     return out
 
 
@@ -232,6 +237,7 @@ def _sample_correlated_roots(
     target distributions via quantile mapping.
     """
     k = len(root_nodes)
+    strength = float(np.clip(strength, 0.0, 1.0))
     if k <= 1 or strength <= 0:
         return {n: rng.normal(0, 1, size=n_samples) for n in root_nodes}
 
@@ -255,33 +261,6 @@ def _sample_correlated_roots(
 
     samples = rng.multivariate_normal(np.zeros(k), corr, size=n_samples)
     return {root_nodes[i]: samples[:, i] for i in range(k)}
-
-
-def _sample_root(
-    rng: np.random.Generator,
-    feature: dict,
-    n_samples: int,
-) -> np.ndarray:
-    """Sample a root node from its specified distribution."""
-    if feature["type"] == "categorical":
-        # Sample from uniform for latent, will be discretized later
-        return rng.normal(0, 1, size=n_samples)
-
-    dist = feature["distribution"]
-    params = feature["params"]
-
-    if dist == "normal":
-        return rng.normal(params["mean"], params["std"], size=n_samples)
-    elif dist == "lognormal":
-        return rng.lognormal(params["mean"], params["sigma"], size=n_samples)
-    elif dist == "uniform":
-        return rng.uniform(params["low"], params["high"], size=n_samples)
-    elif dist == "exponential":
-        return rng.exponential(params["scale"], size=n_samples)
-    elif dist == "beta":
-        return rng.beta(params["a"], params["b"], size=n_samples)
-    else:
-        return rng.normal(0, 1, size=n_samples)
 
 
 def _apply_mechanism(
@@ -327,6 +306,9 @@ def _apply_mechanism(
     elif mechanism_type == "spline":
         knots = np.asarray(mechanism["knots"], dtype=float)
         values = np.asarray(mechanism["values"], dtype=float)
+        order = np.argsort(knots)
+        knots = knots[order]
+        values = values[order]
         return np.interp(parent_data, knots, values, left=values[0], right=values[-1])
     elif mechanism_type == "interaction":
         interaction_parent = mechanism.get("interaction_parent") or edge.interaction_parent

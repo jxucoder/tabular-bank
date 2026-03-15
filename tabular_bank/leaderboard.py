@@ -167,24 +167,100 @@ def format_leaderboard(leaderboard: pd.DataFrame) -> str:
 
 
 def generate_leaderboard_tabarena(
-    round_id: str = "round-001",
-    cache_dir: str | None = None,
+    results_lst: list,
+    task_metadata: pd.DataFrame | None = None,
+    eval_dir: str | None = None,
+    new_result_prefix: str | None = "TBank_",
+    only_valid_tasks: bool = True,
 ) -> pd.DataFrame:
-    """Generate leaderboard using TabArena's EndToEnd pipeline.
+    """Generate a leaderboard from TabArena pipeline results.
 
-    Requires TabArena to be installed.
+    Takes the raw results from ``run_benchmark_tabarena()`` and processes
+    them through TabArena's ``EndToEnd`` pipeline to produce ELO ratings,
+    win rates, and average ranks — optionally compared against TabArena's
+    published reference leaderboard.
+
+    Args:
+        results_lst: Raw result dicts from ``ExperimentBatchRunner.run()``
+            (the return value of ``run_benchmark_tabarena()``).
+        task_metadata: Task metadata DataFrame (from
+            ``TabularBankContext.get_task_metadata()``).  If None, it will
+            be inferred from the results.
+        eval_dir: Directory for saving evaluation artifacts.  If None,
+            a temporary directory is used.
+        new_result_prefix: Prefix added to method names to distinguish
+            from TabArena's original results when comparing.
+        only_valid_tasks: If True, only compare on tasks present in
+            ``results_lst`` (not the full TabArena suite).
+
+    Returns:
+        A leaderboard DataFrame with ELO ratings, win rates, and ranks.
+
+    Requires TabArena to be installed (pip install tabular-bank[benchmark]).
     """
     try:
-        from tabarena.evaluation import TabArenaEvaluator
+        from tabarena.nips2025_utils.end_to_end import EndToEnd
     except ImportError:
         raise ImportError(
             "TabArena is required for this operation. "
             "Install with: pip install tabular-bank[benchmark]"
         )
 
-    # This would use TabArena's full evaluation pipeline
-    # Left as a hook for when TabArena integration is fully wired up
-    raise NotImplementedError(
-        "Full TabArena leaderboard integration coming soon. "
-        "Use generate_leaderboard() with BenchmarkResult for now."
+    if eval_dir is None:
+        import tempfile
+        eval_dir = tempfile.mkdtemp(prefix="tabular_bank_eval_")
+
+    end_to_end = EndToEnd.from_raw(
+        results_lst=results_lst,
+        task_metadata=task_metadata,
+        cache=False,
+        cache_raw=False,
     )
+    end_to_end_results = end_to_end.to_results()
+
+    leaderboard = end_to_end_results.compare_on_tabarena(
+        output_dir=eval_dir,
+        only_valid_tasks=only_valid_tasks,
+        use_model_results=True,
+        new_result_prefix=new_result_prefix,
+    )
+
+    return leaderboard
+
+
+def generate_leaderboard_standalone(
+    results_lst: list,
+    task_metadata: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Generate a standalone leaderboard from TabArena pipeline results.
+
+    Unlike ``generate_leaderboard_tabarena()``, this does NOT compare
+    against TabArena's reference results — it only ranks models that
+    were actually run in ``results_lst``.
+
+    Args:
+        results_lst: Raw result dicts from ``ExperimentBatchRunner.run()``.
+        task_metadata: Task metadata DataFrame.
+
+    Returns:
+        A leaderboard DataFrame.
+
+    Requires TabArena to be installed (pip install tabular-bank[benchmark]).
+    """
+    try:
+        from tabarena.nips2025_utils.end_to_end import EndToEnd
+    except ImportError:
+        raise ImportError(
+            "TabArena is required for this operation. "
+            "Install with: pip install tabular-bank[benchmark]"
+        )
+
+    end_to_end = EndToEnd.from_raw(
+        results_lst=results_lst,
+        task_metadata=task_metadata,
+        cache=False,
+        cache_raw=False,
+    )
+    end_to_end_results = end_to_end.to_results()
+    leaderboard = end_to_end_results.leaderboard()
+    return leaderboard

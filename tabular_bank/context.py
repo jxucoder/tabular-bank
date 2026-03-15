@@ -124,9 +124,46 @@ class TabularBankContext:
     def get_tabarena_tasks(self, cache_path: Path | None = None):
         """Convert all tasks to TabArena UserTask objects.
 
+        Returns a list of ``UserTask`` instances that can be used with
+        TabArena's ``ExperimentBatchRunner``.
+
         Requires TabArena to be installed (pip install tabular-bank[benchmark]).
         """
         return [t.to_tabarena_task(cache_path=cache_path) for t in self.get_tasks()]
+
+    def get_task_metadata(self) -> pd.DataFrame:
+        """Build a task_metadata DataFrame compatible with TabArena's
+        ``ExperimentBatchRunner``.
+
+        The DataFrame contains one row per task with columns expected by
+        TabArena: ``tid``, ``name``, ``problem_type``, ``metric``,
+        ``target_name``, ``n_samples``, ``n_features``.
+        """
+        rows = []
+        for task in self.get_tasks():
+            # Map tabular-bank problem types to TabArena metric conventions
+            if task.problem_type == "binary":
+                metric = "roc_auc"
+            elif task.problem_type == "multiclass":
+                metric = "log_loss"
+            else:
+                metric = "rmse"
+
+            tabarena_problem_type = (
+                "classification" if task.problem_type in ("binary", "multiclass")
+                else "regression"
+            )
+
+            rows.append({
+                "tid": hash(task.name) % 10**10,
+                "name": task.name,
+                "problem_type": tabarena_problem_type,
+                "metric": metric,
+                "target_name": task.target,
+                "n_samples": task.n_samples,
+                "n_features": task.n_features,
+            })
+        return pd.DataFrame(rows)
 
     def _get_expected_scenario_ids(self) -> list[str] | None:
         """Return the authoritative scenario ordering for the round, if known."""

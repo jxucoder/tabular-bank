@@ -139,18 +139,21 @@ def sample_scenario(
     problem_type = str(rng.choice(types, p=weights))
 
     lo, hi = sp["n_features_range"]
-    if hi - lo < 3:
+    if hi <= lo:
+        n_feat_lo, n_feat_hi = int(lo), int(lo)
+    elif hi - lo < 3:
         n_feat_lo, n_feat_hi = lo, hi
     else:
         n_feat_lo = int(rng.integers(lo, hi - 2))
         n_feat_hi = int(rng.integers(n_feat_lo + 2, hi + 1))
 
     lo, hi = sp["n_samples_range"]
-    if hi - lo < 500:
+    if hi <= lo:
+        n_samp_lo, n_samp_hi = int(lo), int(lo)
+    elif hi - lo < 500:
         n_samp_lo, n_samp_hi = lo, hi
     else:
-        mid = max(lo + 1, hi // 2)
-        n_samp_lo = int(rng.integers(lo, mid))
+        n_samp_lo = int(rng.integers(lo, hi - 499))
         n_samp_hi = int(rng.integers(n_samp_lo + 500, hi + 1))
 
     cat_ratio = float(rng.uniform(*sp["categorical_ratio_range"]))

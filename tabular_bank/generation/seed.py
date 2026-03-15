@@ -71,6 +71,18 @@ def get_master_secret(
     if cache_dir is not None:
         secret_file = Path(cache_dir) / ".secret"
         if secret_file.exists():
+            # Warn if the secret file has overly permissive permissions
+            # (similar to SSH key permission checks).
+            import stat
+            import warnings
+            file_mode = secret_file.stat().st_mode
+            if file_mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH):
+                warnings.warn(
+                    f"Secret file {secret_file} has overly permissive permissions "
+                    f"(mode {oct(file_mode & 0o777)}). Consider restricting to "
+                    f"owner-only: chmod 600 {secret_file}",
+                    stacklevel=2,
+                )
             return secret_file.read_text().strip()
 
     raise ValueError(

@@ -6,6 +6,7 @@ full TabArena integration mode for official benchmarking.
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from dataclasses import dataclass, field
@@ -118,7 +119,6 @@ def evaluate_model(
             X_train_enc, X_test_enc = _encode_features(X_train, X_test)
 
             # Fit
-            import copy
             model_copy = copy.deepcopy(model)
             t0 = time.time()
             model_copy.fit(X_train_enc, y_train)
@@ -230,14 +230,44 @@ def run_benchmark_tabarena(
     master_secret: str | None = None,
     cache_dir: str | Path | None = None,
     experiments: list | None = None,
+    expname: str | None = None,
+    datasets: list[str] | None = None,
+    folds: list[int] | None = None,
+    ignore_cache: bool = False,
+    n_scenarios: int = 10,
 ):
     """Run benchmark using TabArena's full pipeline.
 
+    Generates contamination-proof datasets and evaluates them using
+    TabArena's ``ExperimentBatchRunner`` with 8-fold bagging, standardized
+    HPO, and full result serialization.
+
+    Args:
+        round_id: Benchmark round identifier.
+        master_secret: Secret for dataset generation.
+        cache_dir: Cache directory for generated datasets.
+        experiments: List of TabArena experiment objects (e.g.,
+            ``AGModelBagExperiment``).  If None, a default set of
+            LightGBM + RandomForest experiments is used.
+        expname: Directory path for saving experiment artifacts.
+            Defaults to ``<cache_dir>/<round_id>/tabarena_experiments``.
+        datasets: Subset of dataset names to evaluate. Defaults to all.
+        folds: Which folds to evaluate. Defaults to ``[0]`` (first fold).
+        ignore_cache: If True, re-run experiments from scratch.
+        n_scenarios: Number of scenarios to generate.
+
+    Returns:
+        A list of raw result dicts from ``ExperimentBatchRunner.run()``,
+        suitable for passing to ``EndToEnd.from_raw()`` for leaderboard
+        generation.
+
     Requires TabArena to be installed (pip install tabular-bank[benchmark]).
-    Uses TabArena's AGModelBagExperiment, ExperimentBatchRunner, etc.
     """
     try:
-        from tabarena.benchmark.experiment import AGModelBagExperiment
+        from tabarena.benchmark.experiment import (
+            AGModelBagExperiment,
+            ExperimentBatchRunner,
+        )
     except ImportError:
         raise ImportError(
             "TabArena is required for this operation. "
@@ -248,12 +278,68 @@ def run_benchmark_tabarena(
         round_id=round_id,
         master_secret=master_secret,
         cache_dir=cache_dir,
+        n_scenarios=n_scenarios,
     )
 
-    tabarena_tasks = ctx.get_tabarena_tasks()
-    # At this point, users should use TabArena's ExperimentBatchRunner
-    # directly with the tasks. This function returns the tasks for convenience.
-    return tabarena_tasks
+    # Convert tasks to TabArena format
+    user_tasks = ctx.get_tabarena_tasks()
+    task_metadata = ctx.get_task_metadata()
+
+    # Default experiments: LightGBM and RandomForest with 8-fold bagging
+    if experiments is None:
+        try:
+            from autogluon.tabular.models import LGBModel, RFModel
+            experiments = [
+                AGModelBagExperiment(
+                    name="LightGBM_BAG_L1",
+                    model_cls=LGBModel,
+                    model_hyperparameters={},
+                    num_bag_folds=8,
+                    time_limit=3600,
+                ),
+                AGModelBagExperiment(
+                    name="RandomForest_BAG_L1",
+                    model_cls=RFModel,
+                    model_hyperparameters={},
+                    num_bag_folds=8,
+                    time_limit=3600,
+                ),
+            ]
+        except ImportError:
+            raise ImportError(
+                "AutoGluon is required for default experiments. "
+                "Install with: pip install tabular-bank[benchmark] "
+                "or pass custom experiments via the `experiments` parameter."
+            )
+
+    if expname is None:
+        exp_dir = Path(cache_dir) if cache_dir else Path.home() / ".cache" / "tabular_bank"
+        expname = str(exp_dir / round_id / "tabarena_experiments")
+
+    if datasets is None:
+        datasets = [ut.task_name for ut in user_tasks]
+
+    if folds is None:
+        folds = [0]
+
+    exp_batch_runner = ExperimentBatchRunner(
+        expname=expname,
+        task_metadata=task_metadata,
+    )
+
+    results_lst = exp_batch_runner.run(
+        datasets=datasets,
+        folds=folds,
+        methods=experiments,
+        ignore_cache=ignore_cache,
+    )
+
+    logger.info(
+        "TabArena benchmark complete: %d result entries for %d datasets",
+        len(results_lst), len(datasets),
+    )
+
+    return results_lst
 
 
 def _default_metric(problem_type: str) -> str:
@@ -275,6 +361,19 @@ def _evaluate_metric(
 ) -> float:
     """Compute a metric for a fitted model."""
     if metric_name == "roc_auc":
+        # ROC-AUC is undefined when the evaluation split has only one class.
+        # Fall back to accuracy so benchmarking continues deterministically.
+        if pd.Series(y_test).nunique(dropna=True) < 2:
+            import warnings
+            warnings.warn(
+                "ROC-AUC is undefined for a single-class test split — "
+                "falling back to accuracy. This may indicate a data "
+                "distribution issue (e.g., extreme class imbalance or "
+                "too-small test fold).",
+                stacklevel=2,
+            )
+            y_pred = model.predict(X_test)
+            return float(accuracy_score(y_test, y_pred))
         if hasattr(model, "predict_proba"):
             y_proba = model.predict_proba(X_test)
             if y_proba.ndim == 2:
@@ -290,6 +389,13 @@ def _evaluate_metric(
         else:
             # log_loss requires probabilities; hard labels from predict()
             # will crash for multiclass targets.  Fall back to accuracy.
+            import warnings
+            warnings.warn(
+                "Model lacks predict_proba — falling back from log_loss "
+                "to accuracy. Scores may not be comparable with "
+                "probabilistic models.",
+                stacklevel=2,
+            )
             y_pred = model.predict(X_test)
             return float(accuracy_score(y_test, y_pred))
     elif metric_name == "rmse":

@@ -91,6 +91,13 @@ def _inject_mar(
 
         driver_vals = pd.to_numeric(df[driver], errors="coerce")
         if driver_vals.isna().all():
+            import warnings
+            warnings.warn(
+                f"MAR driver column '{driver}' is all-NaN — falling back "
+                f"to MCAR for column '{col}'. This may produce unexpected "
+                f"missingness patterns.",
+                stacklevel=2,
+            )
             mask = rng.random(len(df)) < rate
         else:
             median = driver_vals.median()

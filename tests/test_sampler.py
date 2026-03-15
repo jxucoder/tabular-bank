@@ -169,6 +169,46 @@ def test_spline_mechanism_produces_finite_nonconstant_values():
     assert df["target"].max() <= 0.9 + 1e-8
 
 
+def test_spline_mechanism_handles_unsorted_knots():
+    """Custom spline knots can be unsorted and should still interpolate safely."""
+    rng = np.random.default_rng(31)
+    features = [
+        {
+            "name": "root_feature",
+            "type": "continuous",
+            "distribution": "normal",
+            "params": {"mean": 0.0, "std": 1.0},
+        }
+    ]
+    target = {"name": "target", "type": "continuous", "problem_type": "regression"}
+    dag = DAGSpec(
+        nodes=["root_feature", "target"],
+        target="target",
+        root_nodes=["root_feature"],
+        edges=[
+            Edge(
+                parent="root_feature",
+                child="target",
+                coefficient=1.0,
+                mechanism={
+                    "type": "spline",
+                    "knots": [2.5, -2.5, 0.5, -0.5],
+                    "values": [0.1, -1.0, 0.9, -0.2],
+                },
+            )
+        ],
+        noise_scales={"root_feature": 0.0, "target": 0.0},
+        noise_models={
+            "root_feature": {"type": "homoscedastic", "scale": 0.0},
+            "target": {"type": "homoscedastic", "scale": 0.0},
+        },
+        autocorr={"root_feature": 0.0},
+    )
+
+    df = sample_dataset(rng, dag, features, target, n_samples=300)
+    assert np.isfinite(df["target"]).all()
+
+
 def test_heteroscedastic_noise_depends_on_driver_feature():
     """Heteroscedastic noise models should change residual variance with the driver."""
     rng = np.random.default_rng(4)
