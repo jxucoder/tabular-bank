@@ -13,8 +13,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 
+from tabular_bank.baselines import run_official_baselines
+from tabular_bank.board import build_board_site
 from tabular_bank.generation.seed import get_default_cache_dir
+from tabular_bank.rounds import write_validation_report
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -64,6 +68,44 @@ def main(argv: list[str] | None = None) -> None:
     info_parser.add_argument("--round", default="round-001", help="Benchmark round ID")
     info_parser.add_argument("--cache-dir", default=None, help="Cache directory")
 
+    validate_parser = subparsers.add_parser("validate", help="Validate a generated round")
+    validate_parser.add_argument("--round", default="round-001", help="Benchmark round ID")
+    validate_parser.add_argument("--cache-dir", default=None, help="Cache directory")
+
+    baseline_parser = subparsers.add_parser("run-baselines", help="Run official baseline models")
+    baseline_parser.add_argument("--round", default="round-001", help="Benchmark round ID")
+    baseline_parser.add_argument("--cache-dir", default=None, help="Cache directory")
+    baseline_parser.add_argument(
+        "--repeat",
+        dest="repeats",
+        action="append",
+        type=int,
+        help="Repeat index to evaluate. Repeat to provide multiple values.",
+    )
+    baseline_parser.add_argument(
+        "--fold",
+        dest="folds",
+        action="append",
+        type=int,
+        help="Fold index to evaluate. Repeat to provide multiple values.",
+    )
+    baseline_parser.add_argument(
+        "--track",
+        dest="tracks",
+        action="append",
+        choices=["classical", "foundation"],
+        help="Restrict the run to one or more method tracks.",
+    )
+
+    board_parser = subparsers.add_parser("build-board", help="Build a static leaderboard site")
+    board_parser.add_argument("--round", default="round-001", help="Benchmark round ID")
+    board_parser.add_argument("--cache-dir", default=None, help="Cache directory")
+    board_parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory where the static board site should be written",
+    )
+
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -75,6 +117,12 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_generate(args)
     elif args.command == "info":
         _cmd_info(args)
+    elif args.command == "validate":
+        _cmd_validate(args)
+    elif args.command == "run-baselines":
+        _cmd_run_baselines(args)
+    elif args.command == "build-board":
+        _cmd_build_board(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -148,7 +196,6 @@ def _cmd_generate(args) -> None:
 
 def _cmd_info(args) -> None:
     import json
-    from pathlib import Path
 
     cache_dir = Path(args.cache_dir) if args.cache_dir else get_default_cache_dir()
     round_dir = cache_dir / args.round
@@ -183,6 +230,39 @@ def _cmd_info(args) -> None:
         if "n_classes" in meta:
             print(f"    Classes:      {meta['n_classes']}")
         print()
+
+
+def _cmd_validate(args) -> None:
+    path = write_validation_report(
+        round_id=args.round,
+        cache_dir=args.cache_dir,
+    )
+    print(f"Wrote validation report: {path}")
+
+
+def _cmd_run_baselines(args) -> None:
+    if args.repeats and any(repeat < 0 for repeat in args.repeats):
+        raise SystemExit("--repeat values must be non-negative")
+    if args.folds and any(fold < 0 for fold in args.folds):
+        raise SystemExit("--fold values must be non-negative")
+
+    path = run_official_baselines(
+        round_id=args.round,
+        cache_dir=args.cache_dir,
+        repeats=args.repeats,
+        folds=args.folds,
+        tracks=set(args.tracks) if args.tracks else None,
+    )
+    print(f"Wrote baseline run manifest: {path}")
+
+
+def _cmd_build_board(args) -> None:
+    path = build_board_site(
+        round_id=args.round,
+        cache_dir=args.cache_dir,
+        output_dir=args.output_dir,
+    )
+    print(f"Built static board site: {path}")
 
 
 if __name__ == "__main__":
