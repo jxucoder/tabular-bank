@@ -31,7 +31,7 @@ def generate_features(
         template["n_features_range"][0],
         template["n_features_range"][1] + 1,
     ))
-    n_categorical = max(1, int(n_features * template["categorical_ratio"]))
+    n_categorical = min(max(1, int(n_features * template["categorical_ratio"])), n_features)
     n_continuous = n_features - n_categorical
 
     features = []

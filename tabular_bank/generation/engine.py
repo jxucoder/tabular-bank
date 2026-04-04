@@ -109,8 +109,9 @@ def generate_single_dataset(
     # Step 5: Create splits (10 repeats x 3 folds = 30 splits)
     splits = _create_splits(df, target, split_seed)
 
-    # Build metadata
+    # Build metadata — use actual DataFrame shape for accuracy
     dataset_id = f"{round_id}_{template['id']}"
+    n_samples = len(df)
     total_features = len(df.columns) - 1
     informative_features = len(features)
     noise_features = total_features - informative_features

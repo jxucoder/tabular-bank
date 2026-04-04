@@ -128,8 +128,11 @@ def load_tasks_from_cache(
 
     tasks = []
     if scenario_ids is not None:
+        resolved_round = round_dir.resolve()
         for scenario_id in scenario_ids:
             ds_dir = round_dir / scenario_id
+            if not ds_dir.resolve().is_relative_to(resolved_round):
+                continue
             meta_path = ds_dir / "metadata.json"
             if ds_dir.is_dir() and meta_path.exists():
                 tasks.append(_load_single_task(ds_dir))

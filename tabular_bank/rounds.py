@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from tabular_bank import __version__
+from tabular_bank import __version__, default_metric as _default_metric
 from tabular_bank.generation.seed import get_default_cache_dir
 from tabular_bank.tasks import SyntheticTask, load_tasks_from_cache
 
@@ -221,14 +221,6 @@ def _artifact_record(path: Path, round_dir: Path) -> dict:
         "path": str(path.relative_to(round_dir)),
         "sha256": _sha256_file(path),
     }
-
-
-def _default_metric(problem_type: str) -> str:
-    if problem_type == "binary":
-        return "roc_auc"
-    if problem_type == "multiclass":
-        return "log_loss"
-    return "rmse"
 
 
 def _single_value_or_list(values: set[int]) -> int | list[int] | None:

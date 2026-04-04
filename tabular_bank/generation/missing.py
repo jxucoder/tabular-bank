@@ -41,6 +41,7 @@ def inject_missing(
     """
     if rate <= 0:
         return df
+    rate = min(rate, 1.0)
 
     mechanism = mechanism.upper()
     feature_cols = [c for c in df.columns if c != target_col]
