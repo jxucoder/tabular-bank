@@ -99,7 +99,6 @@ def _compute_elo(
     task_scores: pd.DataFrame,
     initial_elo: float = 1500.0,
     n_iterations: int = 200,
-    lr: float = 0.1,
 ) -> dict[str, float]:
     """Compute ELO-scale ratings via Bradley-Terry maximum likelihood.
 

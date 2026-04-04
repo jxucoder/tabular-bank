@@ -7,12 +7,13 @@ When TabArena is not installed, provides a standalone task representation.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from tabular_bank import _scenario_sort_key
 
 
 @dataclass
@@ -141,12 +142,7 @@ def load_tasks_from_cache(
     return tasks
 
 
-def _dataset_sort_key(name: str) -> tuple[str, int, str]:
-    """Sort sampled dataset directories numerically when possible."""
-    match = re.match(r"^(.*)_(\d+)$", name)
-    if match:
-        return (match.group(1), int(match.group(2)), name)
-    return (name, -1, name)
+_dataset_sort_key = _scenario_sort_key
 
 
 def _load_single_task(ds_dir: Path) -> SyntheticTask:
