@@ -111,6 +111,10 @@ def _inject_mar(
                 df.loc[mask, col] = np.nan
                 continue
         median = driver_vals.median()
+        if pd.isna(median):
+            mask = rng.random(len(df)) < rate
+            df.loc[mask, col] = np.nan
+            continue
         above = driver_vals >= median
         # Rows above median: 2x the base rate; below: near zero
         probs = np.where(above, min(rate * 2, 1.0), rate * 0.2)

@@ -261,6 +261,8 @@ def _sample_correlated_roots(
     raw = rng.normal(0, 1, size=(k, k))
     cov = raw @ raw.T
     d = np.sqrt(np.diag(cov))
+    # Guard against zero diagonal (degenerate Gram matrix)
+    d = np.maximum(d, 1e-10)
     corr = cov / np.outer(d, d)
     # Blend toward identity to control strength
     corr = (1 - strength) * np.eye(k) + strength * corr
@@ -270,8 +272,12 @@ def _sample_correlated_roots(
     eigvals, eigvecs = np.linalg.eigh(corr)
     eigvals = np.maximum(eigvals, 1e-6)
     corr = eigvecs @ np.diag(eigvals) @ eigvecs.T
-    d_fix = np.sqrt(np.diag(corr))
+    d_fix = np.sqrt(np.maximum(np.diag(corr), 1e-10))
     corr = corr / np.outer(d_fix, d_fix)
+
+    # Fall back to independent sampling if reconstruction produced NaN
+    if np.any(np.isnan(corr)):
+        return {n: rng.normal(0, 1, size=n_samples) for n in root_nodes}
 
     samples = rng.multivariate_normal(np.zeros(k), corr, size=n_samples)
     return {root_nodes[i]: samples[:, i] for i in range(k)}
@@ -355,12 +361,13 @@ def _sample_node_noise(
     noise_type = noise_model.get("type", "homoscedastic")
 
     if noise_type == "homoscedastic":
-        scale = float(noise_model.get("scale", noise_model.get("base_scale", 0.5)))
-        return rng.normal(0, scale, size=n_samples)
+        scale = abs(float(noise_model.get("scale", noise_model.get("base_scale", 0.5))))
+        return rng.normal(0, max(scale, 1e-10), size=n_samples)
 
     if noise_type == "heteroscedastic":
         driver = noise_model.get("driver")
-        base_scale = float(noise_model.get("base_scale", noise_model.get("scale", 0.5)))
+        base_scale = abs(float(noise_model.get("base_scale", noise_model.get("scale", 0.5))))
+        base_scale = max(base_scale, 1e-10)
         if not driver or driver not in all_data:
             return rng.normal(0, base_scale, size=n_samples)
 
@@ -375,6 +382,7 @@ def _sample_node_noise(
         high_multiplier = float(noise_model.get("high_multiplier", 1.5))
         blend = expit(driver_normalized)
         scales = base_scale * (low_multiplier + (high_multiplier - low_multiplier) * blend)
+        scales = np.maximum(scales, 1e-10)
         return rng.normal(0, scales, size=n_samples)
 
     raise ValueError(f"Unknown noise model type: {noise_type}")
