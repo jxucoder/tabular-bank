@@ -232,7 +232,7 @@ def compute_task_diversity(
         vals1 = task_scores[t1].dropna()
         vals2 = task_scores[t2].dropna()
         common_idx = vals1.index.intersection(vals2.index)
-        if len(common_idx) < 5:
+        if len(common_idx) < 3:
             rho = float("nan")
         else:
             rho, _ = spearmanr(vals1[common_idx], vals2[common_idx])

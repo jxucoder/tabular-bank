@@ -91,20 +91,29 @@ def _inject_mar(
 
         driver_vals = pd.to_numeric(df[driver], errors="coerce")
         if driver_vals.isna().all():
-            import warnings
-            warnings.warn(
-                f"MAR driver column '{driver}' is all-NaN — falling back "
-                f"to MCAR for column '{col}'. This may produce unexpected "
-                f"missingness patterns.",
-                stacklevel=2,
-            )
-            mask = rng.random(len(df)) < rate
-        else:
-            median = driver_vals.median()
-            above = driver_vals >= median
-            # Rows above median: 2x the base rate; below: near zero
-            probs = np.where(above, min(rate * 2, 1.0), rate * 0.2)
-            mask = rng.random(len(df)) < probs
+            # Try to find another numeric driver before falling back to MCAR
+            numeric_others = [
+                c for c in others
+                if c != driver and not pd.to_numeric(df[c], errors="coerce").isna().all()
+            ]
+            if numeric_others:
+                driver = str(rng.choice(numeric_others))
+                driver_vals = pd.to_numeric(df[driver], errors="coerce")
+            else:
+                import warnings
+                warnings.warn(
+                    f"MAR: no numeric driver column available for '{col}' "
+                    f"— falling back to MCAR.",
+                    stacklevel=2,
+                )
+                mask = rng.random(len(df)) < rate
+                df.loc[mask, col] = np.nan
+                continue
+        median = driver_vals.median()
+        above = driver_vals >= median
+        # Rows above median: 2x the base rate; below: near zero
+        probs = np.where(above, min(rate * 2, 1.0), rate * 0.2)
+        mask = rng.random(len(df)) < probs
 
         df.loc[mask, col] = np.nan
     return df

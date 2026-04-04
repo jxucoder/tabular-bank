@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from scipy.signal import lfilter
-from scipy.special import expit, softmax
+from scipy.special import expit, logit, softmax
 from scipy.stats import rankdata
 
 from tabular_bank.generation.dag_builder import DAGSpec
@@ -153,7 +153,6 @@ def sample_dataset(
         # Centre the latent first so the bias term controls the class ratio
         # regardless of the latent's mean (which can drift after DAG
         # processing with asymmetric mechanisms or noise).
-        from scipy.special import logit
         latent_centered = data[target_name] - np.mean(data[target_name])
         bias = logit(imbalance_ratio)
         probs = expit(latent_centered + bias)
@@ -170,7 +169,7 @@ def sample_dataset(
         logits = np.zeros((n_samples, n_classes))
         for c in range(n_classes):
             logits[:, c] = weights[c] * data[target_name] + offsets[c]
-            logits[:, c] += rng.normal(0, 0.3, size=n_samples)
+            logits[:, c] += rng.normal(0, 0.3 / np.sqrt(max(1, n_classes / 3)), size=n_samples)
         probs = softmax(logits, axis=1)
         result[target_name] = np.array([
             rng.choice(n_classes, p=probs[i])
@@ -213,10 +212,11 @@ def _apply_autocorr(raw: np.ndarray, rho: float) -> np.ndarray:
     rho = float(np.clip(rho, -0.999, 0.999))
     scale = np.sqrt(1.0 - rho ** 2)
     # Vectorized AR(1) via IIR filter: y[t] = rho*y[t-1] + scale*raw[t]
-    # lfilter with b=[scale], a=[1, -rho] computes this in C, avoiding a
-    # slow Python loop over all samples.
+    # The first element passes through unscaled (y[0] = raw[0]) so that
+    # initial conditions don't introduce a variance discontinuity.
+    # We pre-scale all elements except the first, then use lfilter with
+    # b=[1], a=[1, -rho] to apply the recursive part.
     scaled_raw = raw.copy()
-    scaled_raw[0] = raw[0]  # first element passes through unscaled
     scaled_raw[1:] = scale * raw[1:]
     out = lfilter([1.0], [1.0, -rho], scaled_raw)
     return out

@@ -362,7 +362,13 @@ def _evaluate_metric(
     problem_type: str,
     metric_name: str,
 ) -> float:
-    """Compute a metric for a fitted model."""
+    """Compute a metric for a fitted model.
+
+    All returned scores follow the "higher is better" convention so that
+    leaderboard ranking is consistent across metric types.  For metrics
+    that are naturally "lower is better" (log_loss, RMSE) the value is
+    negated before being returned.
+    """
     if metric_name == "roc_auc":
         # ROC-AUC is undefined when the evaluation split has only one class.
         # Fall back to accuracy so benchmarking continues deterministically.

@@ -6,3 +6,11 @@ the generation engine and minimal scenario templates, no dataset-specific inform
 """
 
 __version__ = "0.1.0"
+
+
+def _scenario_sort_key(scenario_id: str) -> tuple[str, int, str]:
+    """Sort sampled scenario identifiers numerically when possible."""
+    prefix, sep, suffix = scenario_id.rpartition("_")
+    if sep and suffix.isdigit():
+        return (prefix, int(suffix), scenario_id)
+    return (scenario_id, -1, scenario_id)

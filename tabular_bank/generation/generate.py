@@ -17,6 +17,7 @@ from tabular_bank.generation.engine import (
     GeneratedDataset,
     generate_sampled_datasets,
 )
+from tabular_bank import _scenario_sort_key
 from tabular_bank.generation.seed import get_default_cache_dir, get_master_secret
 from tabular_bank.rounds import write_round_manifest
 
@@ -155,12 +156,6 @@ def _merge_scenario_ids(round_dir: Path, scenario_id: str) -> list[str]:
     return sorted(merged, key=_scenario_sort_key)
 
 
-def _scenario_sort_key(scenario_id: str) -> tuple[str, int, str]:
-    """Sort sampled scenario identifiers numerically when possible."""
-    prefix, sep, suffix = scenario_id.rpartition("_")
-    if sep and suffix.isdigit():
-        return (prefix, int(suffix), scenario_id)
-    return (scenario_id, -1, scenario_id)
 
 
 def load_dataset(ds_dir: Path) -> GeneratedDataset:

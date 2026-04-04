@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import stat
+import warnings
 from pathlib import Path
 
 
@@ -25,11 +27,15 @@ def derive_round_seed(master_secret: str, round_id: str) -> bytes:
 def derive_dataset_seed(round_seed: bytes, dataset_index: int) -> int:
     """Derive a numpy-compatible integer seed for a specific dataset."""
     h = hmac.new(round_seed, f"dataset-{dataset_index}".encode("utf-8"), hashlib.sha256)
-    return int.from_bytes(h.digest()[:4], "big")
+    return int.from_bytes(h.digest()[:8], "big")
 
 
 def derive_split_seed(round_seed: bytes, dataset_index: int) -> int:
-    """Derive a separate seed for split generation (independent of data seed)."""
+    """Derive a separate seed for split generation (independent of data seed).
+
+    Returns a 32-bit seed because sklearn's KFold uses legacy RandomState
+    which requires seeds in [0, 2**32).
+    """
     h = hmac.new(round_seed, f"split-{dataset_index}".encode("utf-8"), hashlib.sha256)
     return int.from_bytes(h.digest()[:4], "big")
 
@@ -37,13 +43,13 @@ def derive_split_seed(round_seed: bytes, dataset_index: int) -> int:
 def derive_feature_seed(round_seed: bytes, dataset_index: int) -> int:
     """Derive a seed for feature name/type generation."""
     h = hmac.new(round_seed, f"features-{dataset_index}".encode("utf-8"), hashlib.sha256)
-    return int.from_bytes(h.digest()[:4], "big")
+    return int.from_bytes(h.digest()[:8], "big")
 
 
 def derive_dag_seed(round_seed: bytes, dataset_index: int) -> int:
     """Derive a seed for DAG topology construction."""
     h = hmac.new(round_seed, f"dag-{dataset_index}".encode("utf-8"), hashlib.sha256)
-    return int.from_bytes(h.digest()[:4], "big")
+    return int.from_bytes(h.digest()[:8], "big")
 
 
 def get_master_secret(
@@ -73,8 +79,6 @@ def get_master_secret(
         if secret_file.exists():
             # Warn if the secret file has overly permissive permissions
             # (similar to SSH key permission checks).
-            import stat
-            import warnings
             file_mode = secret_file.stat().st_mode
             if file_mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH):
                 warnings.warn(

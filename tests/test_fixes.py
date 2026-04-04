@@ -192,8 +192,8 @@ def test_mar_all_nan_driver_warns():
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         inject_missing(np.random.default_rng(1), df, target_col="target", rate=0.2, mechanism="MAR")
-        # At least one warning about all-NaN driver should appear
-        assert any("all-NaN" in str(warning.message) for warning in w)
+        # At least one warning about falling back to MCAR should appear
+        assert any("falling back to MCAR" in str(warning.message) for warning in w)
 
 
 # ---------------------------------------------------------------------------
