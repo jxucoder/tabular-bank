@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import shutil
 from pathlib import Path
@@ -153,8 +154,10 @@ def _write_index_html(path: Path, rounds_index: list[dict]) -> None:
     round_links = "".join(
         (
             "<li>"
-            f"<a href=\"./rounds/{summary['round_id']}/index.html\">{summary['round_id']}</a> "
-            f"({summary['n_scenarios']} scenarios, validation={summary['validation_status']})"
+            f"<a href=\"./rounds/{html.escape(str(summary['round_id']), quote=True)}/index.html\">"
+            f"{html.escape(str(summary['round_id']))}</a> "
+            f"({html.escape(str(summary['n_scenarios']))} scenarios, "
+            f"validation={html.escape(str(summary['validation_status']))})"
             "</li>"
         )
         for summary in rounds_index
@@ -176,14 +179,18 @@ def _write_index_html(path: Path, rounds_index: list[dict]) -> None:
 def _write_round_html(path: Path, artifacts: dict) -> None:
     summary = artifacts["round_summary"]
     overall_rows = _table_rows(artifacts["overall"]["entries"])
+    esc_round_id = html.escape(str(summary['round_id']))
+    esc_n_scenarios = html.escape(str(summary['n_scenarios']))
+    esc_validation = html.escape(str(summary['validation_status']))
+    esc_tracks = html.escape(', '.join(summary['available_tracks'])) or 'none'
     path.write_text(
         _html_page(
-            title=f"tabular-bank {summary['round_id']}",
+            title=f"tabular-bank {esc_round_id}",
             stylesheet_href="../../styles.css",
             body=(
-                f"<h1>Round {summary['round_id']}</h1>"
-                f"<p>Scenarios: {summary['n_scenarios']} | Validation: {summary['validation_status']}</p>"
-                f"<p>Tracks: {', '.join(summary['available_tracks']) or 'none'}</p>"
+                f"<h1>Round {esc_round_id}</h1>"
+                f"<p>Scenarios: {esc_n_scenarios} | Validation: {esc_validation}</p>"
+                f"<p>Tracks: {esc_tracks}</p>"
                 "<p>"
                 "<a href=\"./classical.html\">Classical track</a> | "
                 "<a href=\"./foundation.html\">Foundation track</a>"
@@ -197,13 +204,15 @@ def _write_round_html(path: Path, artifacts: dict) -> None:
 
 
 def _write_track_html(path: Path, summary: dict, track: str, payload: dict) -> None:
+    esc_round_id = html.escape(str(summary['round_id']))
+    esc_track = html.escape(track)
     path.write_text(
         _html_page(
-            title=f"{summary['round_id']} {track}",
+            title=f"{esc_round_id} {esc_track}",
             stylesheet_href="../../styles.css",
             body=(
-                f"<h1>{track.title()} track</h1>"
-                f"<p><a href=\"./index.html\">Back to round {summary['round_id']}</a></p>"
+                f"<h1>{html.escape(track.title())} track</h1>"
+                f"<p><a href=\"./index.html\">Back to round {esc_round_id}</a></p>"
                 f"{_table_rows(payload['entries'])}"
             ),
         ),
@@ -216,12 +225,12 @@ def _table_rows(entries: list[dict]) -> str:
         return "<p>No leaderboard entries available.</p>"
 
     headers = ["rank", "model", "elo", "avg_rank", "win_rate", "mean_score", "n_tasks", "coverage_ratio", "coverage_status"]
-    head = "".join(f"<th>{header}</th>" for header in headers)
+    head = "".join(f"<th>{html.escape(str(header))}</th>" for header in headers)
     body = []
     for row in entries:
         body.append(
             "<tr>" + "".join(
-                f"<td>{row.get(header, '')}</td>" for header in headers
+                f"<td>{html.escape(str(row.get(header, '')))}</td>" for header in headers
             ) + "</tr>"
         )
     return (

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
-from hashlib import sha1
+from hashlib import sha256
 from pathlib import Path
 
 import pandas as pd
 
+from tabular_bank import default_metric
 from tabular_bank.generation.generate import generate_all
 from tabular_bank.generation.seed import get_default_cache_dir, get_master_secret
 from tabular_bank.tasks import SyntheticTask, load_tasks_from_cache
@@ -78,7 +79,13 @@ class TabularBankContext:
             return False
         scenario_ids = meta.get("scenario_ids", [])
         if scenario_ids:
-            return all((self.round_dir / scenario_id / ".complete").exists() for scenario_id in scenario_ids)
+            for scenario_id in scenario_ids:
+                ds_path = (self.round_dir / scenario_id).resolve()
+                if not ds_path.is_relative_to(self.round_dir.resolve()):
+                    return False
+                if not (ds_path / ".complete").exists():
+                    return False
+            return True
 
         complete_count = sum(
             1
@@ -142,13 +149,7 @@ class TabularBankContext:
         """
         rows = []
         for task in self.get_tasks():
-            # Map tabular-bank problem types to TabArena metric conventions
-            if task.problem_type == "binary":
-                metric = "roc_auc"
-            elif task.problem_type == "multiclass":
-                metric = "log_loss"
-            else:
-                metric = "rmse"
+            metric = default_metric(task.problem_type)
 
             tabarena_problem_type = (
                 "classification" if task.problem_type in ("binary", "multiclass")
@@ -187,4 +188,4 @@ class TabularBankContext:
 
 def _stable_tid(name: str) -> int:
     """Return a stable task identifier suitable for cached metadata."""
-    return int(sha1(name.encode("utf-8")).hexdigest()[:12], 16)
+    return int(sha256(name.encode("utf-8")).hexdigest()[:12], 16)

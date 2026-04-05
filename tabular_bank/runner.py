@@ -22,6 +22,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from tabular_bank import default_metric as _default_metric
 from tabular_bank.context import TabularBankContext
 from tabular_bank.tasks import SyntheticTask
 
@@ -345,16 +346,6 @@ def run_benchmark_tabarena(
     return results_lst
 
 
-def _default_metric(problem_type: str) -> str:
-    """Return the default metric for a problem type."""
-    if problem_type == "binary":
-        return "roc_auc"
-    elif problem_type == "multiclass":
-        return "log_loss"
-    else:
-        return "rmse"
-
-
 def _evaluate_metric(
     model,
     X_test: pd.DataFrame,
@@ -436,7 +427,7 @@ def _encode_features(
     X_train = X_train.copy()
     X_test = X_test.copy()
 
-    cat_cols = X_train.select_dtypes(include=["object", "category"]).columns.tolist()
+    cat_cols = X_train.select_dtypes(include=["object", "string", "category"]).columns.tolist()
     for col in cat_cols:
         categories = sorted(X_train[col].dropna().unique())
         cat_map = {c: i for i, c in enumerate(categories)}

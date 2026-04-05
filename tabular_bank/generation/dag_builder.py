@@ -563,8 +563,12 @@ def _normalize_mechanism(mechanism: dict[str, Any]) -> dict[str, Any]:
         normalized.setdefault("frequency", 1.0)
         normalized.setdefault("phase", 0.0)
     elif mechanism_type == "spline":
-        knots = normalized.get("knots") or [-2.5, -0.5, 0.5, 2.5]
-        values = normalized.get("values") or [-1.0, -0.2, 0.2, 1.0]
+        knots = normalized.get("knots")
+        values = normalized.get("values")
+        if knots is None or len(knots) == 0:
+            knots = [-2.5, -0.5, 0.5, 2.5]
+        if values is None or len(values) == 0:
+            values = [-1.0, -0.2, 0.2, 1.0]
         if len(knots) != len(values):
             raise ValueError("Spline mechanism requires equally sized knots and values")
         normalized["knots"] = [float(k) for k in knots]

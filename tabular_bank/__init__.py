@@ -14,3 +14,15 @@ def _scenario_sort_key(scenario_id: str) -> tuple[str, int, str]:
     if sep and suffix.isdigit():
         return (prefix, int(suffix), scenario_id)
     return (scenario_id, -1, scenario_id)
+
+
+def default_metric(problem_type: str) -> str:
+    """Return the default evaluation metric for a problem type.
+
+    Used consistently across runner, rounds, and context modules.
+    """
+    if problem_type == "binary":
+        return "roc_auc"
+    elif problem_type == "multiclass":
+        return "log_loss"
+    return "rmse"

@@ -7,6 +7,8 @@ via sampled causal mechanisms attached to DAG edges.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy.signal import lfilter
@@ -159,16 +161,28 @@ def sample_dataset(
         result[target_name] = rng.binomial(1, probs).astype(int)
     elif target["problem_type"] == "multiclass":
         n_classes = target["n_classes"]
-        # Create n_classes logits using independent random projections so
-        # that every class has a unique, unbiased relationship with the
-        # latent signal.  Previous code used a deterministic formula that
-        # reversed the signal for higher classes and imposed a fixed
-        # frequency ordering.
-        weights = rng.normal(0, 1, size=n_classes)
+        # Build logits from multiple feature dimensions so that class
+        # boundaries are not purely 1-D.  Use the target latent plus up
+        # to 3 randomly chosen informative features as input signals.
+        signal_cols = [target_name]
+        feat_names = [f["name"] for f in features if f["name"] in data]
+        if feat_names:
+            n_extra = min(3, len(feat_names))
+            extra = rng.choice(feat_names, size=n_extra, replace=False)
+            signal_cols.extend(extra.tolist())
+        n_signals = len(signal_cols)
+        weights = rng.normal(0, 1, size=(n_signals, n_classes))
         offsets = rng.normal(0, 0.5, size=n_classes)
         logits = np.zeros((n_samples, n_classes))
+        for s_idx, col in enumerate(signal_cols):
+            col_data = np.asarray(data[col], dtype=float)
+            col_std = np.std(col_data)
+            if col_std > 0:
+                col_data = (col_data - np.mean(col_data)) / col_std
+            for c in range(n_classes):
+                logits[:, c] += weights[s_idx, c] * col_data
         for c in range(n_classes):
-            logits[:, c] = weights[c] * data[target_name] + offsets[c]
+            logits[:, c] += offsets[c]
             logits[:, c] += rng.normal(0, 0.3 / np.sqrt(max(1, n_classes / 3)), size=n_samples)
         probs = softmax(logits, axis=1)
         result[target_name] = np.array([
@@ -247,6 +261,8 @@ def _sample_correlated_roots(
     raw = rng.normal(0, 1, size=(k, k))
     cov = raw @ raw.T
     d = np.sqrt(np.diag(cov))
+    # Guard against zero diagonal (degenerate Gram matrix)
+    d = np.maximum(d, 1e-10)
     corr = cov / np.outer(d, d)
     # Blend toward identity to control strength
     corr = (1 - strength) * np.eye(k) + strength * corr
@@ -256,8 +272,12 @@ def _sample_correlated_roots(
     eigvals, eigvecs = np.linalg.eigh(corr)
     eigvals = np.maximum(eigvals, 1e-6)
     corr = eigvecs @ np.diag(eigvals) @ eigvecs.T
-    d_fix = np.sqrt(np.diag(corr))
+    d_fix = np.sqrt(np.maximum(np.diag(corr), 1e-10))
     corr = corr / np.outer(d_fix, d_fix)
+
+    # Fall back to independent sampling if reconstruction produced NaN
+    if np.any(np.isnan(corr)):
+        return {n: rng.normal(0, 1, size=n_samples) for n in root_nodes}
 
     samples = rng.multivariate_normal(np.zeros(k), corr, size=n_samples)
     return {root_nodes[i]: samples[:, i] for i in range(k)}
@@ -320,6 +340,12 @@ def _apply_mechanism(
             else:
                 other_normalized = other - np.mean(other)
             return parent_data * other_normalized
+        if interaction_parent:
+            warnings.warn(
+                f"Interaction parent '{interaction_parent}' not found in data — "
+                f"falling back to linear for edge {edge.parent} -> {edge.child}.",
+                stacklevel=2,
+            )
         return parent_data
     else:
         return parent_data
@@ -335,12 +361,13 @@ def _sample_node_noise(
     noise_type = noise_model.get("type", "homoscedastic")
 
     if noise_type == "homoscedastic":
-        scale = float(noise_model.get("scale", noise_model.get("base_scale", 0.5)))
-        return rng.normal(0, scale, size=n_samples)
+        scale = abs(float(noise_model.get("scale", noise_model.get("base_scale", 0.5))))
+        return rng.normal(0, max(scale, 1e-10), size=n_samples)
 
     if noise_type == "heteroscedastic":
         driver = noise_model.get("driver")
-        base_scale = float(noise_model.get("base_scale", noise_model.get("scale", 0.5)))
+        base_scale = abs(float(noise_model.get("base_scale", noise_model.get("scale", 0.5))))
+        base_scale = max(base_scale, 1e-10)
         if not driver or driver not in all_data:
             return rng.normal(0, base_scale, size=n_samples)
 
@@ -355,6 +382,7 @@ def _sample_node_noise(
         high_multiplier = float(noise_model.get("high_multiplier", 1.5))
         blend = expit(driver_normalized)
         scales = base_scale * (low_multiplier + (high_multiplier - low_multiplier) * blend)
+        scales = np.maximum(scales, 1e-10)
         return rng.normal(0, scales, size=n_samples)
 
     raise ValueError(f"Unknown noise model type: {noise_type}")
@@ -374,8 +402,12 @@ def _transform_to_distribution(
     # correctly by assigning the mean rank to tied values, avoiding the
     # artificial noise that argsort-based ranking introduces.
     n = len(latent)
+    if n == 0:
+        return latent
     ranks = rankdata(latent, method="average")  # 1-based
     quantiles = (ranks - 0.5) / n
+    # Clamp to (0, 1) open interval to avoid -inf/+inf from ppf functions
+    quantiles = np.clip(quantiles, 1e-10, 1.0 - 1e-10)
 
     if dist == "normal":
         from scipy.stats import norm
@@ -404,6 +436,8 @@ def _discretize_categorical(
     categories = feature["categories"]
     probs = feature["probs"]
     n = len(latent)
+    if n == 0:
+        return []
 
     # Use latent values to influence category assignment while
     # maintaining approximate target probabilities
@@ -460,7 +494,7 @@ def _inject_noise_features(
             src = str(rng.choice(continuous_names))
             src_data = np.asarray(result[src], dtype=float)
             noise_std = np.std(src_data) * float(rng.uniform(0.05, 0.3))
-            result[name] = src_data + rng.normal(0, noise_std, size=n_samples)
+            result[name] = src_data + rng.normal(0, max(noise_std, 1e-8), size=n_samples)
         else:
             # Random linear combination of 2-3 existing features
             n_combo = min(int(rng.integers(2, 4)), len(continuous_names))
@@ -469,7 +503,7 @@ def _inject_noise_features(
             for c in chosen:
                 w = float(rng.normal(0, 1))
                 combo += w * np.asarray(result[c], dtype=float)
-            combo += rng.normal(0, np.std(combo) * 0.1, size=n_samples)
+            combo += rng.normal(0, max(np.std(combo) * 0.1, 1e-8), size=n_samples)
             result[name] = combo
 
     return result

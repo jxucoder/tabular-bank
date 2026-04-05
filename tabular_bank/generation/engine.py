@@ -94,10 +94,10 @@ def generate_single_dataset(
 
     # Step 3: Sample data
     data_rng = np.random.default_rng(data_seed)
-    n_samples = int(data_rng.integers(
+    n_samples = max(1, int(data_rng.integers(
         template["n_samples_range"][0],
         template["n_samples_range"][1] + 1,
-    ))
+    )))
     df = sample_dataset(data_rng, dag, features, target, n_samples, template=template)
 
     # Step 4: Inject missing values (if configured)
@@ -109,8 +109,9 @@ def generate_single_dataset(
     # Step 5: Create splits (10 repeats x 3 folds = 30 splits)
     splits = _create_splits(df, target, split_seed)
 
-    # Build metadata
+    # Build metadata — use actual DataFrame shape for accuracy
     dataset_id = f"{round_id}_{template['id']}"
+    n_samples = len(df)
     total_features = len(df.columns) - 1
     informative_features = len(features)
     noise_features = total_features - informative_features
@@ -132,7 +133,10 @@ def generate_single_dataset(
         "difficulty": template["difficulty"],
     }
     if template["problem_type"] != "regression":
-        metadata["n_classes"] = template.get("n_classes", 2)
+        n_classes = template.get("n_classes", 2)
+        if template["problem_type"] == "multiclass" and n_classes < 3:
+            n_classes = 3
+        metadata["n_classes"] = n_classes
 
     return GeneratedDataset(
         scenario_id=template["id"],

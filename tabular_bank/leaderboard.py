@@ -161,7 +161,7 @@ def _compute_elo(
         strength = new_strength
 
     # Convert to ELO scale: ELO = 1500 + 400 * log10(strength)
-    elo_values = initial_elo + 400.0 * np.log10(np.maximum(strength, 1e-12))
+    elo_values = initial_elo + 400.0 * np.log10(np.maximum(strength, eps))
     return {m: float(elo_values[idx[m]]) for m in models}
 
 

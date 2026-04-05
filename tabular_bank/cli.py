@@ -15,6 +15,7 @@ import logging
 import sys
 from pathlib import Path
 
+from tabular_bank import _scenario_sort_key
 from tabular_bank.baselines import run_official_baselines
 from tabular_bank.board import build_board_site
 from tabular_bank.generation.seed import get_default_cache_dir
@@ -213,7 +214,7 @@ def _cmd_info(args) -> None:
         print(f"Datasets: {round_meta['n_datasets']}")
         print()
 
-    for ds_dir in sorted(round_dir.iterdir()):
+    for ds_dir in sorted(round_dir.iterdir(), key=lambda p: _scenario_sort_key(p.name)):
         if not ds_dir.is_dir():
             continue
         meta_path = ds_dir / "metadata.json"
@@ -225,7 +226,9 @@ def _cmd_info(args) -> None:
         print(f"    Domain:       {meta['domain']}")
         print(f"    Problem type: {meta['problem_type']}")
         print(f"    Samples:      {meta['n_samples']}")
-        print(f"    Features:     {meta['n_features']} ({meta['n_continuous']} continuous, {meta['n_categorical']} categorical)")
+        n_cont = meta.get('n_continuous', '?')
+        n_cat = meta.get('n_categorical', '?')
+        print(f"    Features:     {meta['n_features']} ({n_cont} continuous, {n_cat} categorical)")
         print(f"    Target:       {meta['target_name']}")
         if "n_classes" in meta:
             print(f"    Classes:      {meta['n_classes']}")
