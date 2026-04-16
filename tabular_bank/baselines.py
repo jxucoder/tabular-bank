@@ -263,7 +263,7 @@ def run_official_baselines(
                 folds=folds,
                 n_scenarios=total_tasks,
             )
-        except Exception as exc:  # pragma: no cover - exercised via artifact status
+        except (ImportError, ValueError, RuntimeError, OSError) as exc:
             method_records.append({
                 "method_name": spec.name,
                 "track": spec.track,

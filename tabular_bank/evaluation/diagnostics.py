@@ -241,7 +241,8 @@ def _detect_dimensions(task_metadata: pd.DataFrame) -> list[str]:
             available.append(dim)
     # Check nested difficulty dict
     if "difficulty" in task_metadata.columns:
-        sample = task_metadata["difficulty"].dropna().iloc[0] if not task_metadata["difficulty"].dropna().empty else None
+        non_null = task_metadata["difficulty"].dropna()
+        sample = non_null.iloc[0] if not non_null.empty else None
         if isinstance(sample, dict):
             for dim in DIFFICULTY_DIMENSIONS:
                 if dim in sample and dim not in available:

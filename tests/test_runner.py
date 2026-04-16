@@ -111,7 +111,10 @@ def test_encode_features_imputes_test_only_missing_values():
     assert not train_enc.isna().any().any()
     assert not test_enc.isna().any().any()
     assert test_enc.loc[0, "a"] == pytest.approx(2.0)
-    assert test_enc.loc[0, "b"] == -1
+    # Missing categoricals are encoded as len(categories), avoiding collision
+    # with valid category codes.  Here categories are ["x", "y"] → codes 0, 1
+    # so missing gets 2.
+    assert test_enc.loc[0, "b"] == 2
 
 
 def test_roc_auc_falls_back_when_test_split_has_single_class():

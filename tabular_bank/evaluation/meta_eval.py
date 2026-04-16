@@ -20,8 +20,6 @@ from itertools import combinations
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
-from scipy.special import expit
 from scipy.stats import kendalltau, spearmanr
 
 from tabular_bank.leaderboard import get_task_scores
@@ -365,11 +363,15 @@ def compute_irt(
     if theta_std > 0:
         theta = (theta - np.mean(theta)) / theta_std
 
-    # Alternating optimization (10 iterations is typically sufficient)
+    # Alternating optimization with convergence checking
     a = np.ones(n_tasks)
     c = np.zeros(n_tasks)
+    max_iterations = 15
+    convergence_tol = 1e-6
+    converged = False
 
-    for _ in range(15):
+    prev_residual = float("inf")
+    for iteration in range(max_iterations):
         # Fix theta, solve for a_j, c_j per task (linear regression)
         for j in range(n_tasks):
             valid = mask[:, j]
@@ -401,6 +403,21 @@ def compute_irt(
         # Re-centre theta for identifiability
         theta -= np.mean(theta)
 
+        # Check convergence via reconstruction error
+        predicted = np.outer(theta, a) + c[np.newaxis, :]
+        residuals = np.where(mask, (scores - predicted) ** 2, 0.0)
+        residual = float(np.sum(residuals))
+        if abs(prev_residual - residual) < convergence_tol:
+            converged = True
+            break
+        prev_residual = residual
+
+    if not converged:
+        logger.warning(
+            "IRT did not converge after %d iterations (residual=%.6f).",
+            max_iterations, prev_residual,
+        )
+
     # Convert to IRT parameters: difficulty b_j = -c_j / a_j
     items = []
     for j in range(n_tasks):
@@ -413,7 +430,7 @@ def compute_irt(
 
     abilities = {models[i]: float(theta[i]) for i in range(n_models)}
 
-    return IRTResult(items=items, model_abilities=abilities, converged=True)
+    return IRTResult(items=items, model_abilities=abilities, converged=converged)
 
 
 # ---------------------------------------------------------------------------

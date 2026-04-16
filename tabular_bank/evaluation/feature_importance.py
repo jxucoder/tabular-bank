@@ -246,9 +246,15 @@ def evaluate_importance_fidelity(
         correct_in_bottom = len(bottom_k & true_noise)
         precision = correct_in_bottom / len(bottom_k) if bottom_k else 0.0
         recall = correct_in_bottom / len(true_noise) if true_noise else 0.0
+    elif n_noise == 0:
+        # No noise features: nothing to detect, perfect by default
+        precision = 1.0
+        recall = 1.0
     else:
-        precision = 1.0 if n_noise == 0 else 0.0
-        recall = 1.0 if n_noise == 0 else 0.0
+        # All features are noise (n_noise == len(common)): bottom_k == common,
+        # so every bottom-ranked feature is truly noise.
+        precision = 1.0
+        recall = 1.0
 
     # Top-k overlap
     n_informative = len(ground_truth.informative_features)

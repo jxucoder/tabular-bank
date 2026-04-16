@@ -155,8 +155,10 @@ class LinearTrend(_ForecastingBase):
         predictions = np.zeros(n_rows)
 
         if n_lags < 2:
-            # Can't fit a trend with < 2 points
-            return data[:, -1] if n_lags == 1 else predictions
+            # Can't fit a trend with < 2 points; fall back to last value or zero
+            if n_lags == 1:
+                return data[:, 0]
+            return predictions
 
         # Time axis: 0 = oldest lag, n_lags-1 = most recent
         t = np.arange(n_lags, dtype=float)

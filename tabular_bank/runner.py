@@ -416,7 +416,7 @@ def _evaluate_metric(
         # Avoid division by zero
         mask = np.abs(y_true) > 1e-10
         if mask.sum() == 0:
-            return 0.0
+            return float("nan")  # MAPE is undefined when all true values ≈ 0
         mape_val = float(np.mean(np.abs((y_true[mask] - y_p[mask]) / y_true[mask])))
         return -mape_val  # Negate so higher is better
     elif metric_name == "directional_accuracy":
@@ -424,7 +424,7 @@ def _evaluate_metric(
         y_true = np.asarray(y_test, dtype=float)
         y_p = np.asarray(y_pred, dtype=float)
         if len(y_true) < 2:
-            return 0.5
+            return float("nan")  # Directional accuracy undefined for < 2 samples
         # Fraction of times predicted direction matches actual direction
         true_dir = np.diff(y_true) > 0
         pred_dir = np.diff(y_p) > 0
@@ -456,8 +456,9 @@ def _encode_features(
     for col in cat_cols:
         categories = sorted(X_train[col].dropna().unique())
         cat_map = {c: i for i, c in enumerate(categories)}
-        X_train[col] = X_train[col].map(cat_map).fillna(-1).astype(int)
-        X_test[col] = X_test[col].map(cat_map).fillna(-1).astype(int)
+        missing_code = len(categories)  # guaranteed outside the mapping range
+        X_train[col] = X_train[col].map(cat_map).fillna(missing_code).astype(int)
+        X_test[col] = X_test[col].map(cat_map).fillna(missing_code).astype(int)
 
     # Fill remaining NaN in numeric columns with the train-set median.
     numeric_cols = X_train.select_dtypes(include=["number"]).columns

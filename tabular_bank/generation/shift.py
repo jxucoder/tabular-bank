@@ -17,8 +17,12 @@ robustness.  Three shift types are supported:
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def inject_covariate_shift(
@@ -107,6 +111,7 @@ def inject_concept_drift(
 
     numeric_features = [f for f in feature_names if pd.api.types.is_numeric_dtype(df[f])]
     if not numeric_features:
+        logger.warning("No numeric features available for concept drift injection; returning unmodified splits.")
         return train_df, test_df
 
     target_dtype = df[target].dtype
@@ -114,7 +119,7 @@ def inject_concept_drift(
     if pd.api.types.is_float_dtype(target_dtype):
         # Regression: add feature-dependent perturbation to target
         # Pick a random feature and add a nonlinear function of it to the test target
-        drift_feature = str(rng.choice(numeric_features))
+        drift_feature = rng.choice(numeric_features)
         x = test_df[drift_feature].values.astype(float)
         x_std = np.std(x)
         if x_std > 0:
@@ -137,7 +142,8 @@ def inject_concept_drift(
                 for i in test_df.index[flip_mask]:
                     current = test_df.at[i, target]
                     others = [c for c in classes if c != current]
-                    test_df.at[i, target] = rng.choice(others)
+                    if others:
+                        test_df.at[i, target] = rng.choice(others)
 
     return train_df, test_df
 

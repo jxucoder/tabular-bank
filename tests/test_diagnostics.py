@@ -110,3 +110,4 @@ class TestParetoFrontier:
         # All three are Pareto-optimal (tradeoff between speed and accuracy)
         assert "fast" in pareto_models
         assert "slow" in pareto_models
+        assert "medium" in pareto_models

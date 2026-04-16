@@ -275,12 +275,16 @@ def _create_temporal_splits(
     return splits
 
 
+_DEFAULT_MAX_LAG_FEATURES = 6
+
+
 def _add_lagged_features(
     df: pd.DataFrame,
     target_name: str,
     features: list[dict],
     n_lags: int,
     forecast_horizon: int,
+    max_lag_features: int = _DEFAULT_MAX_LAG_FEATURES,
 ) -> pd.DataFrame:
     """Add lagged columns for forecasting tasks.
 
@@ -290,15 +294,19 @@ def _add_lagged_features(
 
     Rows where lags or the shifted target are undefined (first n_lags rows
     and last forecast_horizon rows) are dropped.
+
+    Args:
+        max_lag_features: Maximum number of columns to create lags for.
+            Keeps feature count manageable; the target column is always
+            included first.
     """
     df = df.copy()
 
     # Select columns to lag: target + continuous features
     continuous_cols = [f["name"] for f in features if f["type"] == "continuous"]
     lag_cols = [target_name] + [c for c in continuous_cols if c in df.columns]
-    # Limit to at most 5 columns to keep feature count manageable
-    if len(lag_cols) > 6:
-        lag_cols = lag_cols[:6]
+    if len(lag_cols) > max_lag_features:
+        lag_cols = lag_cols[:max_lag_features]
 
     # Create lag features
     for col in lag_cols:
