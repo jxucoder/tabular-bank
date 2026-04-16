@@ -35,8 +35,17 @@ benchmark = [
     "tabarena",
     "autogluon.tabular>=1.0",
 ]
+boosting = [
+    "xgboost>=1.7",
+    "catboost>=1.2",
+    "lightgbm>=4.0",
+]
 foundation = [
     "tabpfn",
+]
+all-baselines = [
+    "tabular-bank[boosting]",
+    "tabular-bank[foundation]",
 ]
 dev = [
     "pytest>=7.0",

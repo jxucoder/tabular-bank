@@ -69,6 +69,7 @@ def build_board_site(
     _write_index_html(output / "index.html", rounds_index)
     _write_round_html(round_output / "index.html", artifacts)
     _write_track_html(round_output / "classical.html", artifacts["round_summary"], "classical", artifacts["tracks"]["classical"])
+    _write_track_html(round_output / "boosting.html", artifacts["round_summary"], "boosting", artifacts["tracks"]["boosting"])
     _write_track_html(round_output / "foundation.html", artifacts["round_summary"], "foundation", artifacts["tracks"]["foundation"])
 
     styles_src = Path(__file__).resolve().parent.parent / "website" / "styles.css"
@@ -101,7 +102,7 @@ def build_board_artifacts(
     )
 
     track_boards: dict[str, dict] = {}
-    for track in ("classical", "foundation"):
+    for track in ("classical", "boosting", "foundation"):
         track_methods = methods_df[
             (methods_df["track"] == track) &
             (methods_df["status"] == "ok") &
@@ -193,6 +194,7 @@ def _write_round_html(path: Path, artifacts: dict) -> None:
                 f"<p>Tracks: {esc_tracks}</p>"
                 "<p>"
                 "<a href=\"./classical.html\">Classical track</a> | "
+                "<a href=\"./boosting.html\">Boosting track</a> | "
                 "<a href=\"./foundation.html\">Foundation track</a>"
                 "</p>"
                 "<h2>Overall leaderboard</h2>"

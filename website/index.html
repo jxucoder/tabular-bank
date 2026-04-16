@@ -18,7 +18,9 @@
           <a href="#overview">Overview</a>
           <a href="#scenario">Scenario</a>
           <a href="#artifacts">Artifacts</a>
-          <a href="#splits">Splits</a>
+          <a href="#baselines">Baselines</a>
+          <a href="#contamination">Contamination</a>
+          <a href="#scaling">Scaling</a>
         </nav>
       </div>
     </header>
@@ -407,47 +409,180 @@ split_seed = HMAC(round_seed, "split-0")</code></pre>
         </article>
       </section>
 
-      <section id="splits" class="section">
+      <section id="baselines" class="section">
         <div class="section-heading">
-          <p class="kicker">Benchmark packaging</p>
-          <h2>Saved outputs and evaluation folds</h2>
+          <p class="kicker">Evaluation</p>
+          <h2>Diverse model baselines</h2>
           <p>
-            After sampling, the dataset is written to disk in a benchmark-ready
-            form.
+            tabular-bank ships with a comprehensive baseline registry spanning
+            classical models, dedicated boosting libraries, and tabular
+            foundation models. All baselines use a scikit-learn&ndash;compatible
+            interface and are automatically routed to compatible task types.
           </p>
         </div>
 
         <div class="three-column">
           <article class="panel">
-            <h3>Saved files</h3>
-            <ul class="plain-list">
-              <li><code>dataset.csv</code> with all rows and columns</li>
-              <li><code>metadata.json</code> with counts and task metadata</li>
-              <li><code>splits.json</code> with repeated train/test indices</li>
-              <li><code>.complete</code> marker for cache reuse</li>
-            </ul>
-          </article>
-
-          <article class="panel">
-            <h3>Split protocol</h3>
+            <h3>Classical track</h3>
+            <p>Always available via scikit-learn.</p>
             <table class="data-table compact">
               <tbody>
-                <tr><th>Repeats</th><td>10</td></tr>
-                <tr><th>Folds per repeat</th><td>3</td></tr>
-                <tr><th>Total splits</th><td>30</td></tr>
-                <tr><th>First train size</th><td>3,694</td></tr>
-                <tr><th>First test size</th><td>1,848</td></tr>
+                <tr><th>RandomForest</th><td>clf &amp; reg</td></tr>
+                <tr><th>GradientBoosting</th><td>clf &amp; reg</td></tr>
+                <tr><th>LogisticRegression</th><td>clf</td></tr>
+                <tr><th>Ridge</th><td>reg</td></tr>
+                <tr><th>KNN</th><td>clf &amp; reg</td></tr>
+                <tr><th>MLP</th><td>clf &amp; reg</td></tr>
               </tbody>
             </table>
           </article>
 
           <article class="panel">
-            <h3>Other sampled tasks in the same round</h3>
+            <h3>Boosting track</h3>
+            <p>Requires optional dependencies.</p>
             <table class="data-table compact">
               <tbody>
-                <tr><th><code>sampled_0</code></th><td>regression, 5,542 rows, 36 features</td></tr>
-                <tr><th><code>sampled_2</code></th><td>multiclass, 3,568 rows, 25 features, 8 classes</td></tr>
-                <tr><th><code>sampled_3</code></th><td>binary, 7,819 rows, 27 features</td></tr>
+                <tr><th>XGBoost</th><td>clf &amp; reg</td></tr>
+                <tr><th>LightGBM</th><td>clf &amp; reg</td></tr>
+                <tr><th>CatBoost</th><td>clf &amp; reg</td></tr>
+              </tbody>
+            </table>
+            <pre><code>pip install tabular-bank[boosting]</code></pre>
+          </article>
+
+          <article class="panel">
+            <h3>Foundation track</h3>
+            <p>Tabular foundation models.</p>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th>TabPFN</th><td>clf</td></tr>
+              </tbody>
+            </table>
+            <pre><code>pip install tabular-bank[foundation]</code></pre>
+            <p class="caption">
+              The foundation track is designed to grow as new tabular foundation
+              models become available with scikit-learn&ndash;compatible wrappers.
+            </p>
+          </article>
+        </div>
+
+        <article class="panel note-panel">
+          <h3>Meta-evaluation with IRT</h3>
+          <p>
+            Beyond leaderboard rankings, tabular-bank includes a meta-evaluation
+            framework that assesses <em>benchmark quality</em> via discriminability
+            scores, task diversity analysis, ranking concordance against reference
+            benchmarks, and 2-parameter Item Response Theory (IRT) analysis that
+            estimates per-task difficulty and discrimination.
+          </p>
+        </article>
+      </section>
+
+      <section id="contamination" class="section">
+        <div class="section-heading">
+          <p class="kicker">Contamination analysis</p>
+          <h2>Detecting memorization in tabular benchmarks</h2>
+          <p>
+            Structured-data corpora are small and reused. When foundation models
+            pretrain on data that overlaps with benchmark datasets, reported gains
+            can reflect memorization rather than genuine capability. tabular-bank
+            provides tools to measure this effect.
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="panel">
+            <h3>How it works</h3>
+            <ol class="plain-list">
+              <li>Run the same set of models on both tabular-bank (contamination-proof)
+                and a reference benchmark (potentially contaminated, e.g. TabArena).</li>
+              <li>Compare the model rankings between the two benchmarks.</li>
+              <li>Models that rank significantly better on the reference than on
+                tabular-bank may benefit from memorization.</li>
+            </ol>
+          </article>
+
+          <article class="panel">
+            <h3>Key metrics</h3>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th>Contamination gap</th><td>Per-model rank difference
+                  between the reference and tabular-bank</td></tr>
+                <tr><th>Relative performance drop</th><td>Normalised score
+                  difference between the two benchmarks</td></tr>
+                <tr><th>MSI</th><td>Memorization Susceptibility Index:
+                  average rank displacement of foundation models vs. classical
+                  models. Positive MSI = foundation models rank better on
+                  the reference (memorization signal).</td></tr>
+              </tbody>
+            </table>
+          </article>
+        </div>
+
+        <div class="callout">
+          <p>
+            <strong>Why this matters.</strong> If a foundation model achieves rank 2 on
+            TabArena but rank 6 on tabular-bank (while classical baselines stay
+            stable), the 4-position gap is evidence that the foundation model&rsquo;s
+            TabArena performance reflects memorization rather than learning.
+          </p>
+        </div>
+      </section>
+
+      <section id="scaling" class="section">
+        <div class="section-heading">
+          <p class="kicker">Scaling analysis</p>
+          <h2>How many tasks produce stable rankings?</h2>
+          <p>
+            A benchmark is only useful if its rankings are stable. tabular-bank
+            includes bootstrap-based scaling analysis to determine the minimum
+            number of scenarios needed for reliable model comparisons.
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="panel">
+            <h3>Scenario scaling</h3>
+            <p>
+              Subsamples tasks at varying counts (3, 5, 10, 15, 20, &hellip;)
+              and measures Kendall&rsquo;s tau against the full-benchmark
+              ranking. Rankings typically stabilize (tau &gt; 0.9) at
+              10&ndash;15 tasks with 5+ diverse models.
+            </p>
+          </article>
+
+          <article class="panel">
+            <h3>Ranking variance</h3>
+            <p>
+              Bootstrap resampling of tasks produces per-model confidence
+              intervals on rank. Models with high rank variance benefit
+              from additional benchmark tasks; models with tight intervals
+              have reliable placement.
+            </p>
+          </article>
+        </div>
+
+        <div class="two-column">
+          <article class="panel">
+            <h3>Sample size scaling</h3>
+            <p>
+              Generates benchmark rounds at different sample sizes (500 to
+              15,000 rows) and measures how rankings shift. Addresses the
+              question: do foundation models gain a relative advantage on
+              larger datasets?
+            </p>
+          </article>
+
+          <article class="panel">
+            <h3>Configurable dimensions</h3>
+            <table class="data-table compact">
+              <tbody>
+                <tr><th>Dataset rows</th><td>1K &ndash; 100K</td></tr>
+                <tr><th>Feature count</th><td>5 &ndash; 200</td></tr>
+                <tr><th>Scenario count</th><td>3 &ndash; 50+</td></tr>
+                <tr><th>Problem type mix</th><td>Binary, multiclass, regression</td></tr>
+                <tr><th>Difficulty axes</th><td>Noise, nonlinearity, interactions,
+                  confounders, missingness (independently sampled)</td></tr>
               </tbody>
             </table>
           </article>
