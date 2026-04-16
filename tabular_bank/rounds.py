@@ -162,6 +162,8 @@ def validate_round(
             errors.append(f"{scenario_id}: target has fewer than 2 classes")
         if task.problem_type == "binary" and target_unique != 2:
             warnings.append(f"{scenario_id}: expected 2 classes, found {target_unique}")
+        if task.problem_type == "forecasting" and target_unique < 5:
+            warnings.append(f"{scenario_id}: forecasting target has very low cardinality ({target_unique})")
 
         for repeat, folds in task.splits.items():
             if not folds:

@@ -16,6 +16,9 @@ from sklearn.ensemble import (
     RandomForestClassifier,
     RandomForestRegressor,
 )
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 from tabular_bank.generation.seed import get_default_cache_dir
 from tabular_bank.rounds import (
@@ -51,8 +54,19 @@ class BaselineSpec:
 
 
 def get_official_baselines() -> list[BaselineSpec]:
-    """Return the checked-in baseline registry for official runs."""
+    """Return the checked-in baseline registry for official runs.
+
+    Baselines are organized into three tracks:
+
+    - **classical**: Traditional ML models (tree ensembles, linear models,
+      KNN, MLPs).  These are always available via scikit-learn.
+    - **boosting**: Dedicated gradient boosting libraries (XGBoost, CatBoost,
+      LightGBM).  Require optional dependencies.
+    - **foundation**: Tabular foundation models (TabPFN, etc.).  Require
+      optional dependencies.
+    """
     return [
+        # --- Classical track (sklearn, always available) ---
         BaselineSpec(
             name="RandomForest-clf",
             track="classical",
@@ -78,11 +92,114 @@ def get_official_baselines() -> list[BaselineSpec]:
             description="Gradient boosting regression baseline.",
         ),
         BaselineSpec(
+            name="LogisticRegression-clf",
+            track="classical",
+            factory=lambda: LogisticRegression(max_iter=1000, random_state=0),
+            description="Logistic regression classification baseline.",
+        ),
+        BaselineSpec(
+            name="Ridge-reg",
+            track="classical",
+            factory=lambda: Ridge(alpha=1.0),
+            description="Ridge regression baseline.",
+        ),
+        BaselineSpec(
+            name="KNN-clf",
+            track="classical",
+            factory=lambda: KNeighborsClassifier(n_neighbors=10),
+            description="K-nearest neighbors classification baseline.",
+        ),
+        BaselineSpec(
+            name="KNN-reg",
+            track="classical",
+            factory=lambda: KNeighborsRegressor(n_neighbors=10),
+            description="K-nearest neighbors regression baseline.",
+        ),
+        BaselineSpec(
+            name="MLP-clf",
+            track="classical",
+            factory=lambda: MLPClassifier(
+                hidden_layer_sizes=(128, 64), max_iter=300, random_state=0,
+            ),
+            description="Multi-layer perceptron classification baseline.",
+        ),
+        BaselineSpec(
+            name="MLP-reg",
+            track="classical",
+            factory=lambda: MLPRegressor(
+                hidden_layer_sizes=(128, 64), max_iter=300, random_state=0,
+            ),
+            description="Multi-layer perceptron regression baseline.",
+        ),
+        # --- Boosting track (optional libraries) ---
+        BaselineSpec(
+            name="XGBoost-clf",
+            track="boosting",
+            factory=_make_xgboost_classifier,
+            dependencies=("xgboost",),
+            description="XGBoost classification baseline.",
+        ),
+        BaselineSpec(
+            name="XGBoost-reg",
+            track="boosting",
+            factory=_make_xgboost_regressor,
+            dependencies=("xgboost",),
+            description="XGBoost regression baseline.",
+        ),
+        BaselineSpec(
+            name="CatBoost-clf",
+            track="boosting",
+            factory=_make_catboost_classifier,
+            dependencies=("catboost",),
+            description="CatBoost classification baseline.",
+        ),
+        BaselineSpec(
+            name="CatBoost-reg",
+            track="boosting",
+            factory=_make_catboost_regressor,
+            dependencies=("catboost",),
+            description="CatBoost regression baseline.",
+        ),
+        BaselineSpec(
+            name="LightGBM-clf",
+            track="boosting",
+            factory=_make_lightgbm_classifier,
+            dependencies=("lightgbm",),
+            description="LightGBM classification baseline.",
+        ),
+        BaselineSpec(
+            name="LightGBM-reg",
+            track="boosting",
+            factory=_make_lightgbm_regressor,
+            dependencies=("lightgbm",),
+            description="LightGBM regression baseline.",
+        ),
+        # --- Forecasting track (time-series baselines) ---
+        BaselineSpec(
+            name="LastValue-fcst",
+            track="forecasting",
+            factory=_make_last_value,
+            description="Naive last-value forecasting baseline.",
+        ),
+        BaselineSpec(
+            name="RollingMean-fcst",
+            track="forecasting",
+            factory=_make_rolling_mean,
+            description="Rolling mean forecasting baseline.",
+        ),
+        BaselineSpec(
+            name="LinearTrend-fcst",
+            track="forecasting",
+            factory=_make_linear_trend,
+            description="Linear trend extrapolation forecasting baseline.",
+        ),
+        # --- Foundation track (tabular foundation models) ---
+        BaselineSpec(
             name="TabPFN-clf",
             track="foundation",
             factory=_make_tabpfn_classifier,
             dependencies=("tabpfn",),
-            description="Optional tabular foundation model baseline.",
+            description="TabPFN tabular foundation model (classification only).",
         ),
     ]
 
@@ -245,3 +362,74 @@ def _make_tabpfn_classifier():
     from tabpfn import TabPFNClassifier
 
     return TabPFNClassifier()
+
+
+def _make_xgboost_classifier():
+    from xgboost import XGBClassifier
+
+    return XGBClassifier(
+        n_estimators=100, max_depth=6, learning_rate=0.1,
+        random_state=0, use_label_encoder=False, eval_metric="logloss",
+    )
+
+
+def _make_xgboost_regressor():
+    from xgboost import XGBRegressor
+
+    return XGBRegressor(
+        n_estimators=100, max_depth=6, learning_rate=0.1, random_state=0,
+    )
+
+
+def _make_catboost_classifier():
+    from catboost import CatBoostClassifier
+
+    return CatBoostClassifier(
+        iterations=100, depth=6, learning_rate=0.1,
+        random_seed=0, verbose=0,
+    )
+
+
+def _make_catboost_regressor():
+    from catboost import CatBoostRegressor
+
+    return CatBoostRegressor(
+        iterations=100, depth=6, learning_rate=0.1,
+        random_seed=0, verbose=0,
+    )
+
+
+def _make_lightgbm_classifier():
+    from lightgbm import LGBMClassifier
+
+    return LGBMClassifier(
+        n_estimators=100, max_depth=6, learning_rate=0.1,
+        random_state=0, verbose=-1,
+    )
+
+
+def _make_lightgbm_regressor():
+    from lightgbm import LGBMRegressor
+
+    return LGBMRegressor(
+        n_estimators=100, max_depth=6, learning_rate=0.1,
+        random_state=0, verbose=-1,
+    )
+
+
+def _make_last_value():
+    from tabular_bank.forecasting import LastValue
+
+    return LastValue()
+
+
+def _make_rolling_mean():
+    from tabular_bank.forecasting import RollingMean
+
+    return RollingMean()
+
+
+def _make_linear_trend():
+    from tabular_bank.forecasting import LinearTrend
+
+    return LinearTrend()

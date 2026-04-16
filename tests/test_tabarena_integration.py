@@ -50,7 +50,7 @@ def test_get_task_metadata_problem_types(ctx):
         if row["problem_type"] == "classification":
             assert row["metric"] in ("roc_auc", "log_loss")
         else:
-            assert row["metric"] == "rmse"
+            assert row["metric"] in ("rmse", "mae")
 
 
 def test_get_task_metadata_tid_unique(ctx):

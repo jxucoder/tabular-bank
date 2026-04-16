@@ -25,4 +25,6 @@ def default_metric(problem_type: str) -> str:
         return "roc_auc"
     elif problem_type == "multiclass":
         return "log_loss"
+    elif problem_type == "forecasting":
+        return "mae"
     return "rmse"

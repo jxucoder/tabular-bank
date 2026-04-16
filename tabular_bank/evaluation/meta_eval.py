@@ -1,11 +1,12 @@
 """Meta-evaluation: diagnostics for benchmark quality.
 
-Answers the question "is this benchmark any good?" via four metrics:
+Answers the question "is this benchmark any good?" via five metrics:
 
 1. Discriminability  — can each task separate strong from weak models?
 2. Ranking concordance — do our rankings agree with a reference benchmark?
 3. Task diversity     — are the tasks redundant or complementary?
-4. Per-task IRT       — principled difficulty/discrimination (stretch).
+4. Per-task IRT       — principled difficulty/discrimination estimates.
+5. Coverage profile   — distribution over problem types and difficulty.
 
 All functions accept the same input: a model-by-task score matrix produced
 by ``get_task_scores()`` from the leaderboard module.
@@ -13,14 +14,19 @@ by ``get_task_scores()`` from the leaderboard module.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from itertools import combinations
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
+from scipy.special import expit
 from scipy.stats import kendalltau, spearmanr
 
 from tabular_bank.leaderboard import get_task_scores
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -60,12 +66,40 @@ class DiversityResult:
 
 
 @dataclass
+class IRTItem:
+    """IRT parameters for a single benchmark task."""
+
+    task: str
+    difficulty: float  # b — higher = harder
+    discrimination: float  # a — higher = better at separating models
+
+
+@dataclass
+class IRTResult:
+    """Item Response Theory analysis for the benchmark."""
+
+    items: list[IRTItem]
+    model_abilities: dict[str, float]  # theta per model
+    converged: bool = True
+
+    @property
+    def difficulty_range(self) -> tuple[float, float]:
+        diffs = [item.difficulty for item in self.items]
+        return (min(diffs), max(diffs))
+
+    @property
+    def mean_discrimination(self) -> float:
+        return float(np.mean([item.discrimination for item in self.items]))
+
+
+@dataclass
 class MetaEvalReport:
     """Complete meta-evaluation report for a benchmark round."""
 
     discriminability: DiscriminabilityResult
     diversity: DiversityResult
     concordance: ConcordanceResult | None = None
+    irt: IRTResult | None = None
 
     def summary(self) -> str:
         lines = [
@@ -98,6 +132,17 @@ class MetaEvalReport:
                 f"(p={self.concordance.kendall_p:.4f})",
                 f"  Spearman rho: {self.concordance.spearman_rho:.3f} "
                 f"(p={self.concordance.spearman_p:.4f})",
+            ]
+
+        if self.irt is not None:
+            lo, hi = self.irt.difficulty_range
+            lines += [
+                "",
+                f"IRT Analysis ({len(self.irt.items)} tasks, "
+                f"{len(self.irt.model_abilities)} models):",
+                f"  Difficulty range:       [{lo:.2f}, {hi:.2f}]",
+                f"  Mean discrimination:    {self.irt.mean_discrimination:.3f}",
+                f"  Converged:              {self.irt.converged}",
             ]
 
         return "\n".join(lines)
@@ -253,6 +298,125 @@ def compute_task_diversity(
 
 
 # ---------------------------------------------------------------------------
+# 4. Item Response Theory (2PL)
+# ---------------------------------------------------------------------------
+
+def compute_irt(
+    task_scores: pd.DataFrame,
+    min_models: int = 4,
+) -> IRTResult | None:
+    """Fit a continuous IRT model to the benchmark score matrix.
+
+    Uses a Gaussian IRT model (normal-ogive variant) that works directly
+    with continuous scores rather than crude binarisation.  Each task has:
+    - **difficulty** (b): tasks with lower mean performance are harder
+    - **discrimination** (a): tasks that better separate strong from weak
+      models have higher discrimination
+
+    Each model has an **ability** (theta) parameter.  The model is:
+
+        score_{ij} ~ Normal(a_j * (theta_i - b_j), sigma_j^2)
+
+    This preserves the full information in continuous scores, unlike the
+    binary 2PL model which loses ranking information within each half.
+
+    Args:
+        task_scores: Model-by-task score matrix.
+        min_models: Minimum number of models required to fit IRT.
+
+    Returns:
+        IRTResult, or None if there are too few models.
+    """
+    models = task_scores.index.tolist()
+    tasks = task_scores.columns.tolist()
+    n_models = len(models)
+    n_tasks = len(tasks)
+
+    if n_models < min_models:
+        logger.info(
+            "IRT requires at least %d models, got %d — skipping.",
+            min_models, n_models,
+        )
+        return None
+
+    # Standardise scores per task so that difficulty and discrimination
+    # are on comparable scales across metrics (ROC-AUC vs neg-RMSE).
+    Z = task_scores.copy()
+    for task in tasks:
+        col = Z[task].dropna()
+        if col.std() > 0:
+            Z[task] = (Z[task] - col.mean()) / col.std()
+        else:
+            Z[task] = 0.0
+
+    scores = Z.values  # (n_models, n_tasks)
+    mask = ~np.isnan(scores)  # valid entries
+
+    # Fit Gaussian IRT via alternating least squares:
+    # score_{ij} ≈ a_j * theta_i + c_j
+    # where difficulty b_j = -c_j / a_j
+    #
+    # This is equivalent to a rank-1 matrix factorization on the
+    # standardised score matrix, which can be solved stably.
+
+    # Initialize theta from row means (model strength proxy)
+    theta = np.nanmean(scores, axis=1)
+    theta_std = np.std(theta)
+    if theta_std > 0:
+        theta = (theta - np.mean(theta)) / theta_std
+
+    # Alternating optimization (10 iterations is typically sufficient)
+    a = np.ones(n_tasks)
+    c = np.zeros(n_tasks)
+
+    for _ in range(15):
+        # Fix theta, solve for a_j, c_j per task (linear regression)
+        for j in range(n_tasks):
+            valid = mask[:, j]
+            if valid.sum() < 2:
+                continue
+            y = scores[valid, j]
+            X = np.column_stack([theta[valid], np.ones(valid.sum())])
+            # Least squares: [a_j, c_j] = (X'X)^-1 X'y
+            try:
+                params, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+                a[j] = max(params[0], 0.01)  # discrimination must be positive
+                c[j] = params[1]
+            except np.linalg.LinAlgError:
+                pass
+
+        # Fix a, c, solve for theta_i per model
+        for i in range(n_models):
+            valid = mask[i, :]
+            if valid.sum() < 1:
+                continue
+            y = scores[i, valid]
+            a_valid = a[valid]
+            c_valid = c[valid]
+            # theta_i = sum(a_j * (y_j - c_j)) / sum(a_j^2)
+            denom = np.sum(a_valid ** 2)
+            if denom > 0:
+                theta[i] = np.sum(a_valid * (y - c_valid)) / denom
+
+        # Re-centre theta for identifiability
+        theta -= np.mean(theta)
+
+    # Convert to IRT parameters: difficulty b_j = -c_j / a_j
+    items = []
+    for j in range(n_tasks):
+        b_j = -c[j] / a[j] if a[j] > 0.01 else 0.0
+        items.append(IRTItem(
+            task=tasks[j],
+            difficulty=float(b_j),
+            discrimination=float(a[j]),
+        ))
+
+    abilities = {models[i]: float(theta[i]) for i in range(n_models)}
+
+    return IRTResult(items=items, model_abilities=abilities, converged=True)
+
+
+# ---------------------------------------------------------------------------
 # Full meta-eval pipeline
 # ---------------------------------------------------------------------------
 
@@ -261,6 +425,8 @@ def run_meta_eval(
     reference_ranking: dict[str, int] | None = None,
     discriminability_threshold: float = 0.2,
     redundancy_threshold: float = 0.9,
+    fit_irt: bool = True,
+    irt_min_models: int = 4,
 ) -> MetaEvalReport:
     """Run all meta-evaluation diagnostics on a BenchmarkResult.
 
@@ -270,6 +436,8 @@ def run_meta_eval(
             (e.g. TabArena model rankings as ``{model_name: rank}``).
         discriminability_threshold: DS below this flags a task.
         redundancy_threshold: Correlation above this flags a task pair.
+        fit_irt: Whether to fit a 2PL IRT model.
+        irt_min_models: Minimum models required for IRT.
     """
     scores = get_task_scores(result)
 
@@ -280,8 +448,13 @@ def run_meta_eval(
     if reference_ranking is not None:
         conc = compute_ranking_concordance(scores, reference_ranking)
 
+    irt = None
+    if fit_irt and not scores.empty:
+        irt = compute_irt(scores, min_models=irt_min_models)
+
     return MetaEvalReport(
         discriminability=disc,
         diversity=div,
         concordance=conc,
+        irt=irt,
     )

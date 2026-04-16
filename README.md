@@ -210,6 +210,94 @@ sigmoid, tanh, piecewise-linear, sinusoidal, spline, and interaction effects.
 Non-root nodes can also sample heteroscedastic residual noise models whose
 variance depends on one of their parents.
 
+## Evaluation Framework
+
+Beyond leaderboard rankings, `tabular-bank` includes a multi-dimensional evaluation framework:
+
+### Baselines (3 tracks)
+
+| Track | Models | Install |
+|-------|--------|---------|
+| **Classical** | RandomForest, GradientBoosting, LogisticRegression, Ridge, KNN, MLP | always available |
+| **Boosting** | XGBoost, LightGBM, CatBoost | `pip install tabular-bank[boosting]` |
+| **Foundation** | TabPFN | `pip install tabular-bank[foundation]` |
+
+### Meta-Evaluation
+
+```python
+from tabular_bank.evaluation import run_meta_eval
+
+report = run_meta_eval(benchmark_result)
+print(report.summary())
+```
+
+Includes: discriminability scoring, task diversity, ranking concordance, and **continuous IRT analysis** (per-task difficulty and discrimination, per-model ability).
+
+### Ground-Truth Feature Importance
+
+Because we *know* the causal DAG, we can compute exact feature importance and compare it against model estimates — a capability unique to procedural benchmarks.
+
+```python
+from tabular_bank.evaluation.feature_importance import (
+    compute_ground_truth_importance, evaluate_importance_fidelity,
+    get_permutation_importance,
+)
+
+# Ground truth from the DAG
+profile = compute_ground_truth_importance(dag, feature_names)
+
+# Compare against model's permutation importance
+estimated = get_permutation_importance(model, X_test, y_test)
+fidelity = evaluate_importance_fidelity(profile, estimated, "GBM")
+```
+
+### Contamination Analysis
+
+Detect memorization by comparing model rankings on tabular-bank (contamination-proof) vs. a reference benchmark:
+
+```python
+from tabular_bank.evaluation import analyze_contamination
+
+report = analyze_contamination(tbank_scores, reference_scores, memorization_prone=["TabPFN"])
+print(report.summary())  # MSI, per-model rank gaps, flagged models
+```
+
+### Dimension-Aware Diagnostics
+
+Analyze model performance along individual difficulty axes (noise, nonlinearity, confounders, etc.):
+
+```python
+from tabular_bank.evaluation.diagnostics import run_diagnostics
+
+report = run_diagnostics(task_scores, task_metadata)
+print(report.summary())  # Per-model correlations with each difficulty dimension
+```
+
+### Scaling Analysis
+
+Bootstrap-based analysis of ranking stability:
+
+```python
+from tabular_bank.evaluation import analyze_scenario_scaling, analyze_ranking_variance
+
+# How many tasks for stable rankings?
+scaling = analyze_scenario_scaling(task_scores, scenario_counts=[5, 10, 15, 20])
+
+# Per-model rank confidence intervals
+variance = analyze_ranking_variance(task_scores, n_bootstrap=500)
+```
+
+### Distribution Shift
+
+Test model robustness under controlled distribution shift:
+
+```python
+from tabular_bank.generation.shift import create_shifted_splits
+
+splits = create_shifted_splits(df, feature_names, target)
+# Returns: {"none": (train, test), "covariate": ..., "concept": ..., "temporal": ...}
+```
+
 ## TabArena Integration
 
 `tabular-bank` datasets are fully compatible with [TabArena](https://github.com/autogluon/tabarena)'s evaluation pipeline. Any code that consumes TabArena datasets can also consume tabular-bank datasets — just swap the data source.

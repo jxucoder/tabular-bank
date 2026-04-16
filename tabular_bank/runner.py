@@ -18,6 +18,7 @@ from sklearn.base import is_classifier, is_regressor
 from sklearn.metrics import (
     accuracy_score,
     log_loss,
+    mean_absolute_error,
     mean_squared_error,
     roc_auc_score,
 )
@@ -211,8 +212,9 @@ def run_benchmark(
 
 # Task types that are classification problems
 _CLASSIFICATION_TYPES = {"binary", "multiclass"}
-# Task types that are regression problems
-_REGRESSION_TYPES = {"regression"}
+# Task types that are regression problems (includes forecasting — both
+# predict continuous targets and accept sklearn regressors)
+_REGRESSION_TYPES = {"regression", "forecasting"}
 
 
 def _is_compatible(model: object, problem_type: str) -> bool:
@@ -404,6 +406,29 @@ def _evaluate_metric(
     elif metric_name == "accuracy":
         y_pred = model.predict(X_test)
         return float(accuracy_score(y_test, y_pred))
+    elif metric_name == "mae":
+        y_pred = model.predict(X_test)
+        return float(-mean_absolute_error(y_test, y_pred))  # Negate so higher is better
+    elif metric_name == "mape":
+        y_pred = model.predict(X_test)
+        y_true = np.asarray(y_test, dtype=float)
+        y_p = np.asarray(y_pred, dtype=float)
+        # Avoid division by zero
+        mask = np.abs(y_true) > 1e-10
+        if mask.sum() == 0:
+            return 0.0
+        mape_val = float(np.mean(np.abs((y_true[mask] - y_p[mask]) / y_true[mask])))
+        return -mape_val  # Negate so higher is better
+    elif metric_name == "directional_accuracy":
+        y_pred = model.predict(X_test)
+        y_true = np.asarray(y_test, dtype=float)
+        y_p = np.asarray(y_pred, dtype=float)
+        if len(y_true) < 2:
+            return 0.5
+        # Fraction of times predicted direction matches actual direction
+        true_dir = np.diff(y_true) > 0
+        pred_dir = np.diff(y_p) > 0
+        return float(np.mean(true_dir == pred_dir))
     else:
         raise ValueError(f"Unknown metric: {metric_name}")
 
