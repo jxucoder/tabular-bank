@@ -174,6 +174,25 @@ def get_official_baselines() -> list[BaselineSpec]:
             dependencies=("lightgbm",),
             description="LightGBM regression baseline.",
         ),
+        # --- Forecasting track (time-series baselines) ---
+        BaselineSpec(
+            name="LastValue-fcst",
+            track="forecasting",
+            factory=_make_last_value,
+            description="Naive last-value forecasting baseline.",
+        ),
+        BaselineSpec(
+            name="RollingMean-fcst",
+            track="forecasting",
+            factory=_make_rolling_mean,
+            description="Rolling mean forecasting baseline.",
+        ),
+        BaselineSpec(
+            name="LinearTrend-fcst",
+            track="forecasting",
+            factory=_make_linear_trend,
+            description="Linear trend extrapolation forecasting baseline.",
+        ),
         # --- Foundation track (tabular foundation models) ---
         BaselineSpec(
             name="TabPFN-clf",
@@ -396,3 +415,21 @@ def _make_lightgbm_regressor():
         n_estimators=100, max_depth=6, learning_rate=0.1,
         random_state=0, verbose=-1,
     )
+
+
+def _make_last_value():
+    from tabular_bank.forecasting import LastValue
+
+    return LastValue()
+
+
+def _make_rolling_mean():
+    from tabular_bank.forecasting import RollingMean
+
+    return RollingMean()
+
+
+def _make_linear_trend():
+    from tabular_bank.forecasting import LinearTrend
+
+    return LinearTrend()

@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
         "--track",
         dest="tracks",
         action="append",
-        choices=["classical", "boosting", "foundation"],
+        choices=["classical", "boosting", "forecasting", "foundation"],
         help="Restrict the run to one or more method tracks.",
     )
 

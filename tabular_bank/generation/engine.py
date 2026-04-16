@@ -101,14 +101,26 @@ def generate_single_dataset(
     )))
     df = sample_dataset(data_rng, dag, features, target, n_samples, template=template)
 
-    # Step 4: Inject missing values (if configured)
+    # Step 4: For forecasting tasks, add lagged features before missing
+    # value injection so that lags are computed from complete data.
+    n_lags = 0
+    forecast_horizon = 1
+    if template["problem_type"] == "forecasting":
+        n_lags = template.get("n_lags", 3)
+        forecast_horizon = template.get("forecast_horizon", 1)
+        df = _add_lagged_features(df, target["name"], features, n_lags, forecast_horizon)
+
+    # Step 5: Inject missing values (if configured)
     missing_rate = template.get("missing_rate", 0.0)
     if missing_rate > 0:
         missing_mechanism = template.get("missing_mechanism", "MCAR")
         df = inject_missing(data_rng, df, target["name"], missing_rate, missing_mechanism)
 
-    # Step 5: Create splits (10 repeats x 3 folds = 30 splits)
-    splits = _create_splits(df, target, split_seed)
+    # Step 6: Create splits
+    if template["problem_type"] == "forecasting":
+        splits = _create_temporal_splits(df, split_seed)
+    else:
+        splits = _create_splits(df, target, split_seed)
 
     # Build metadata — use actual DataFrame shape for accuracy
     dataset_id = f"{round_id}_{template['id']}"
@@ -133,11 +145,14 @@ def generate_single_dataset(
         "domain": template["domain"],
         "difficulty": template["difficulty"],
     }
-    if template["problem_type"] != "regression":
+    if template["problem_type"] not in ("regression", "forecasting"):
         n_classes = template.get("n_classes", 2)
         if template["problem_type"] == "multiclass" and n_classes < 3:
             n_classes = 3
         metadata["n_classes"] = n_classes
+    if template["problem_type"] == "forecasting":
+        metadata["n_lags"] = n_lags
+        metadata["forecast_horizon"] = forecast_horizon
 
     return GeneratedDataset(
         scenario_id=template["id"],
@@ -219,3 +234,84 @@ def _create_splits(
         splits[repeat][fold] = (train_idx, test_idx)
 
     return splits
+
+
+def _create_temporal_splits(
+    df: pd.DataFrame,
+    split_seed: int,
+    n_repeats: int = 5,
+    train_fractions: tuple[float, ...] = (0.5, 0.6, 0.7),
+) -> dict[int, dict[int, tuple[np.ndarray, np.ndarray]]]:
+    """Create time-based train/test splits for forecasting tasks.
+
+    Instead of random cross-validation (which destroys temporal ordering),
+    uses expanding-window splits where the train set is always a prefix
+    of the data and the test set is the subsequent block.
+
+    Each "repeat" uses a different train/test boundary (expanding window).
+    Each "fold" within a repeat uses a different test window length.
+
+    Returns a dict: repeat_idx -> fold_idx -> (train_indices, test_indices)
+    """
+    n = len(df)
+    indices = np.arange(n)
+    splits: dict[int, dict[int, tuple[np.ndarray, np.ndarray]]] = {}
+
+    rng = np.random.default_rng(split_seed)
+
+    for repeat in range(n_repeats):
+        splits[repeat] = {}
+        for fold, train_frac in enumerate(train_fractions):
+            # Add small jitter to the split point for diversity across repeats
+            jitter = float(rng.uniform(-0.03, 0.03))
+            frac = max(0.3, min(0.85, train_frac + jitter * repeat))
+            split_idx = int(n * frac)
+            split_idx = max(10, min(split_idx, n - 10))
+
+            train_idx = indices[:split_idx]
+            test_idx = indices[split_idx:]
+            splits[repeat][fold] = (train_idx, test_idx)
+
+    return splits
+
+
+def _add_lagged_features(
+    df: pd.DataFrame,
+    target_name: str,
+    features: list[dict],
+    n_lags: int,
+    forecast_horizon: int,
+) -> pd.DataFrame:
+    """Add lagged columns for forecasting tasks.
+
+    For each continuous feature and the target, creates lag-1 through lag-k
+    columns.  The target column is then shifted forward by ``forecast_horizon``
+    steps so the task becomes: predict target[t+h] from features[t], lags[t].
+
+    Rows where lags or the shifted target are undefined (first n_lags rows
+    and last forecast_horizon rows) are dropped.
+    """
+    df = df.copy()
+
+    # Select columns to lag: target + continuous features
+    continuous_cols = [f["name"] for f in features if f["type"] == "continuous"]
+    lag_cols = [target_name] + [c for c in continuous_cols if c in df.columns]
+    # Limit to at most 5 columns to keep feature count manageable
+    if len(lag_cols) > 6:
+        lag_cols = lag_cols[:6]
+
+    # Create lag features
+    for col in lag_cols:
+        for lag in range(1, n_lags + 1):
+            lag_name = f"{col}_lag{lag}"
+            df[lag_name] = df[col].shift(lag)
+
+    # Shift target forward: we want to predict target at time t+h
+    # using features at time t.  So the target column becomes the future value.
+    if forecast_horizon > 0:
+        df[target_name] = df[target_name].shift(-forecast_horizon)
+
+    # Drop rows with NaN from lagging/shifting
+    df = df.dropna().reset_index(drop=True)
+
+    return df

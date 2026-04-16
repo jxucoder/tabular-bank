@@ -86,7 +86,7 @@ def get_difficulty_preset(difficulty: str) -> dict:
 # Continuous ranges defining the full "Space of Interest" for scenario params.
 # Any valid configuration has non-zero probability of being sampled.
 SCENARIO_SPACE = {
-    "problem_type_weights": {"binary": 0.45, "multiclass": 0.25, "regression": 0.3},
+    "problem_type_weights": {"binary": 0.35, "multiclass": 0.20, "regression": 0.25, "forecasting": 0.20},
     "n_features_range": (5, 30),
     "n_samples_range": (1000, 15000),
     "n_classes_range": (3, 8),
@@ -107,6 +107,9 @@ SCENARIO_SPACE = {
     "temporal_prob_range": (0.0, 0.4),
     "max_autocorr_range": (0.3, 0.95),
     "root_correlation_strength_range": (0.0, 0.8),
+    # Forecasting-specific parameters
+    "forecast_n_lags_range": (1, 5),
+    "forecast_horizon_range": (1, 3),
 }
 
 
@@ -179,9 +182,16 @@ def sample_scenario(
         scenario["imbalance_ratio"] = float(
             rng.uniform(*sp["imbalance_ratio_range"])
         )
+    if problem_type == "forecasting":
+        scenario["n_lags"] = int(
+            rng.integers(sp["forecast_n_lags_range"][0], sp["forecast_n_lags_range"][1] + 1)
+        )
+        scenario["forecast_horizon"] = int(
+            rng.integers(sp["forecast_horizon_range"][0], sp["forecast_horizon_range"][1] + 1)
+        )
 
     # Sample difficulty parameters independently
-    scenario["difficulty"] = {
+    difficulty = {
         "noise_scale": float(rng.uniform(*sp["noise_scale_range"])),
         "nonlinear_prob": float(rng.uniform(*sp["nonlinear_prob_range"])),
         "interaction_prob": float(rng.uniform(*sp["interaction_prob_range"])),
@@ -200,5 +210,13 @@ def sample_scenario(
             rng.uniform(*sp["root_correlation_strength_range"])
         ),
     }
+
+    # Forecasting tasks require strong temporal structure: force all root
+    # nodes to carry AR(1) autocorrelation so row order is meaningful.
+    if problem_type == "forecasting":
+        difficulty["temporal_prob"] = 1.0
+        difficulty["max_autocorr"] = max(difficulty["max_autocorr"], 0.5)
+
+    scenario["difficulty"] = difficulty
 
     return scenario

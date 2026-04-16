@@ -69,11 +69,11 @@ def generate_features(
     # Generate target name
     target_name = "target"
 
-    if template["problem_type"] == "regression":
+    if template["problem_type"] in ("regression", "forecasting"):
         target = {
             "name": target_name,
             "type": "continuous",
-            "problem_type": "regression",
+            "problem_type": template["problem_type"],
         }
     elif template["problem_type"] == "binary":
         target = {

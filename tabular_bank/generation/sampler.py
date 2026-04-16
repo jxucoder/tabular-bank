@@ -143,7 +143,7 @@ def sample_dataset(
 
     # Process target
     target_name = target["name"]
-    if target["problem_type"] == "regression":
+    if target["problem_type"] in ("regression", "forecasting"):
         # Scale to a reasonable range
         target_data = data[target_name]
         result[target_name] = target_data
