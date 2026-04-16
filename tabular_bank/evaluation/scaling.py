@@ -152,8 +152,11 @@ def analyze_sample_scaling(
 ) -> ScalingReport:
     """Measure how rankings change as dataset size (n_samples) varies.
 
-    Generates benchmark rounds at different sample size ranges and compares
-    the resulting model rankings.
+    Generates benchmark rounds at different sample size ranges.  All rounds
+    share the same secret and round ID base, so the *scenario structure*
+    (DAG topology, mechanism types, difficulty parameters) is identical —
+    only the sample count varies.  This isolates the effect of dataset size
+    on model rankings.
 
     Args:
         models: Dict of model_name -> sklearn-compatible model.
@@ -195,6 +198,9 @@ def analyze_sample_scaling(
 
     for size in sorted(sample_sizes):
         logger.info("Running sample scaling: n_samples_max=%d", size)
+
+        # Fix the sample range so only n_samples varies across runs.
+        # The scenario_space override keeps everything else identical.
         result = run_benchmark(
             models=models,
             round_id=f"{round_id}-scale-{size}",

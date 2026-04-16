@@ -122,8 +122,39 @@ def _save_dataset(dataset: GeneratedDataset, ds_dir: Path) -> None:
     with open(ds_dir / "metadata.json", "w") as f:
         json.dump(dataset.metadata, f, indent=2)
 
+    # Save DAG spec for ground-truth feature importance analysis
+    if dataset.dag is not None:
+        dag_serializable = _serialize_dag(dataset.dag)
+        with open(ds_dir / "dag.json", "w") as f:
+            json.dump(dag_serializable, f, indent=2)
+
     # Write completion marker
     (ds_dir / ".complete").touch()
+
+
+def _serialize_dag(dag) -> dict:
+    """Serialize a DAGSpec to a JSON-compatible dict."""
+    edges = []
+    for edge in dag.edges:
+        edges.append({
+            "parent": edge.parent,
+            "child": edge.child,
+            "form": edge.form,
+            "coefficient": edge.coefficient,
+            "mechanism": edge.mechanism,
+            "is_confounder": edge.is_confounder,
+        })
+
+    return {
+        "nodes": dag.nodes,
+        "target": dag.target,
+        "root_nodes": dag.root_nodes,
+        "edges": edges,
+        "noise_scales": dag.noise_scales,
+        "noise_models": dag.noise_models,
+        "confounders": dag.confounders,
+        "autocorr": dag.autocorr,
+    }
 
 
 def _save_round_metadata(round_dir: Path, round_id: str, scenario_ids: list[str]) -> None:

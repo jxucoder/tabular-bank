@@ -38,6 +38,7 @@ class GeneratedDataset:
     data: pd.DataFrame
     splits: dict[int, dict[int, tuple[np.ndarray, np.ndarray]]]
     metadata: dict
+    dag: DAGSpec | None = None
 
     @property
     def n_samples(self) -> int:
@@ -146,6 +147,7 @@ def generate_single_dataset(
         data=df,
         splits=splits,
         metadata=metadata,
+        dag=dag,
     )
 
 

@@ -30,6 +30,7 @@ class SyntheticTask:
     problem_type: str
     splits: dict[int, dict[int, tuple[np.ndarray, np.ndarray]]]
     metadata: dict = field(default_factory=dict)
+    dag_spec: dict | None = None  # Serialized DAG for ground-truth analysis
 
     @property
     def n_samples(self) -> int:
@@ -169,6 +170,13 @@ def _load_single_task(ds_dir: Path) -> SyntheticTask:
                 np.array(indices["test"]),
             )
 
+    # Load DAG spec if available (for ground-truth feature importance)
+    dag_spec = None
+    dag_path = ds_dir / "dag.json"
+    if dag_path.exists():
+        with open(dag_path) as f:
+            dag_spec = json.load(f)
+
     return SyntheticTask(
         name=metadata["dataset_id"],
         dataset=data,
@@ -176,4 +184,5 @@ def _load_single_task(ds_dir: Path) -> SyntheticTask:
         problem_type=metadata["problem_type"],
         splits=splits,
         metadata=metadata,
+        dag_spec=dag_spec,
     )
